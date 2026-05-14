@@ -113,9 +113,9 @@ Return JSON: { "subject": "...", "body": "..." }`,
       icon: Mail,
       badge: 'High Convert',
       prompt: `Write a lease expiration outreach email from Cushman & Wakefield for ${company.name}.
-Their lease expires: ${(company as Record<string, unknown>).expiration_date || 'soon'}
+Their lease expires: ${(company as unknown as Record<string, unknown>).expiration_date || 'soon'}
 Location: ${company.location || 'San Diego, CA'}
-Current space: ${(company as Record<string, unknown>).leased_sf || 'unknown'} SF
+Current space: ${(company as unknown as Record<string, unknown>).leased_sf || 'unknown'} SF
 
 Write a professional, urgent-but-not-pushy email that:
 1. Opens by noting the upcoming expiration timing
