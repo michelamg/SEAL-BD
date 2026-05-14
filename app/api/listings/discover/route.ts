@@ -1,3 +1,5 @@
+export const maxDuration = 60
+
 import { openai } from '@/lib/openai'
 
 export async function POST(request: Request) {

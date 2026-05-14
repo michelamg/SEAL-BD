@@ -1,3 +1,5 @@
+export const maxDuration = 60
+
 import { searchPeople, enrichCompany, formatApolloContact } from '@/lib/apollo'
 import { searchContacts as ziSearchContacts } from '@/lib/zoominfo'
 

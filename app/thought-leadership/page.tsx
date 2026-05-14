@@ -50,16 +50,23 @@ export default function ThoughtLeadershipPage() {
     fetchItems()
   }
 
+  const [generateError, setGenerateError] = useState<string | null>(null)
+
   const generateOutline = async () => {
     setGenerating(true)
     setAiResult(null)
+    setGenerateError(null)
     try {
       const res = await fetch('/api/thought-leadership/outline', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ vertical: aiVertical, quarter: aiQuarter }),
       })
-      setAiResult(await res.json())
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      setAiResult(data)
+    } catch (err) {
+      setGenerateError(String(err))
     } finally {
       setGenerating(false)
     }
@@ -169,8 +176,13 @@ export default function ThoughtLeadershipPage() {
           </div>
           <Button onClick={generateOutline} disabled={generating} className="gap-2 w-full">
             {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            {generating ? 'Generating…' : 'Generate Outline'}
+            {generating ? 'Generating… (up to 30s)' : 'Generate Outline'}
           </Button>
+          {generateError && (
+            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              Error: {generateError}
+            </div>
+          )}
 
           {aiResult && (
             <div className="mt-4 space-y-4 border border-border rounded-lg p-4">
