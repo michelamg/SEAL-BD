@@ -304,6 +304,21 @@ export default function ImportsPage() {
         const companyMap = new Map<string, string>()
         ;(existingCompanies || []).forEach(c => companyMap.set(c.name.trim().toLowerCase(), c.id))
 
+        // Pre-scan all rows to find company names that don't exist yet → create them
+        const newCompanyNames = new Set<string>()
+        rows.forEach(row => {
+          const companyName = getCol(row, 'Company', 'Company Name', 'Tenant', 'Tenant/Company', 'Organization', 'Employer', 'Firm', 'Business', 'Account')
+          if (companyName && !companyMap.has(companyName.trim().toLowerCase())) {
+            newCompanyNames.add(companyName.trim())
+          }
+        })
+        if (newCompanyNames.size > 0) {
+          const { data: created } = await supabase.from('companies').insert(
+            [...newCompanyNames].map(name => ({ name, track: 'A' as const, stage: 'prospect' as const, source: 'import' }))
+          ).select('id, name')
+          ;(created || []).forEach(c => companyMap.set(c.name.trim().toLowerCase(), c.id))
+        }
+
         const toInsert = rows.map(row => {
           // Try every possible name column variation
           const fullName = getCol(row,
