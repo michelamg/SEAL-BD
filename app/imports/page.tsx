@@ -94,14 +94,16 @@ function parseSpreadsheet(file: File): Promise<Record<string, string>[]> {
 }
 
 function getCol(row: Record<string, string>, ...keys: string[]) {
-  // Case-insensitive, trim-insensitive column lookup
   const rowKeys = Object.keys(row)
   for (const key of keys) {
-    // Try exact match first
+    // Exact match
     if (row[key] !== undefined && String(row[key]).trim()) return String(row[key]).trim()
-    // Try case-insensitive match
-    const found = rowKeys.find(k => k.trim().toLowerCase() === key.toLowerCase())
+    // Case-insensitive + trim match
+    const found = rowKeys.find(k => k.trim().toLowerCase() === key.trim().toLowerCase())
     if (found && String(row[found]).trim()) return String(row[found]).trim()
+    // Partial match — column contains key word (e.g. "first" matches "first name")
+    const partial = rowKeys.find(k => k.trim().toLowerCase().includes(key.trim().toLowerCase()))
+    if (partial && String(row[partial]).trim()) return String(row[partial]).trim()
   }
   return ''
 }
@@ -180,6 +182,8 @@ export default function ImportsPage() {
     finally { setUploading(false); if (compsRef.current) compsRef.current.value = '' }
   }
 
+  const [detectedColumns, setDetectedColumns] = useState<string[]>([])
+
   // General import — preview
   const handleGeneralPreview = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return
@@ -188,6 +192,8 @@ export default function ImportsPage() {
       const rows = await parseSpreadsheet(file)
       setPreview(rows.slice(0, 5))
       setPreviewFile(file)
+      // Show detected column names
+      if (rows.length > 0) setDetectedColumns(Object.keys(rows[0]))
     } catch (err) { setUploadError(`Could not read file: ${err}`) }
   }
 
@@ -475,6 +481,16 @@ export default function ImportsPage() {
                 inputRef={generalRef}
                 onChange={handleGeneralPreview}
               />
+
+              {/* Detected columns */}
+              {detectedColumns.length > 0 && (
+                <div className="text-xs text-muted-foreground">
+                  <span className="font-medium">Detected columns: </span>
+                  {detectedColumns.map(c => (
+                    <span key={c} className="inline-block bg-muted border border-border rounded px-1.5 py-0.5 mr-1 mb-1 font-mono">{c}</span>
+                  ))}
+                </div>
+              )}
 
               {/* Preview */}
               {preview.length > 0 && (
