@@ -120,18 +120,18 @@ export default function ImportsPage() {
       const rows = await parseSpreadsheet(previewFile)
       if (importType === 'companies') {
         const toInsert = rows.map(row => ({
-          name: getCol(row, 'Company Name', 'Company', 'Name', 'Organization'),
+          name: getCol(row, 'Company Name', 'Company', 'Tenant', 'Tenant Name', 'Name', 'Organization', 'Account', 'Client'),
           website: getCol(row, 'Website', 'URL', 'Web'),
-          industry: getCol(row, 'Industry', 'Sector', 'Vertical'),
-          location: getCol(row, 'HQ Location', 'Location', 'City', 'HQ City/State/Country'),
+          industry: getCol(row, 'Industry', 'Sector', 'Vertical', 'Type'),
+          location: getCol(row, 'HQ Location', 'Location', 'City', 'Address', 'HQ City/State/Country', 'Property'),
           size: getCol(row, 'Employees', 'Employee Count', 'Number of Employees', 'Size'),
-          description: getCol(row, 'Description', 'Business Description', 'Summary'),
-          trigger_signal: getCol(row, 'Last Financing Type', 'Last Deal Type', 'Funding', 'Trigger'),
+          description: getCol(row, 'Description', 'Business Description', 'Summary', 'Notes'),
+          trigger_signal: getCol(row, 'Last Financing Type', 'Last Deal Type', 'Funding', 'Trigger', 'Date Leased', 'Lease Date'),
           track: 'A' as const,
           stage: 'prospect' as const,
           source: 'import',
         })).filter(c => c.name && c.name.trim())
-        if (toInsert.length === 0) throw new Error('No company names found. Check your column headers.')
+        if (toInsert.length === 0) throw new Error('No company/tenant names found. Make sure your spreadsheet has a column named "Company Name", "Tenant", "Name", or similar.')
         await supabase.from('companies').insert(toInsert)
         setUploadResult({ count: toInsert.length, type: 'companies' })
       } else {
