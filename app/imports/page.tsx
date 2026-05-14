@@ -183,11 +183,35 @@ export default function ImportsPage() {
             source: 'import',
           }
         })
-        const toInsert = allMapped.filter((c): c is NonNullable<typeof c> => !!c && !!(c.name?.trim()))
-        const skipped = allMapped.filter(c => c === null).length
-        if (toInsert.length === 0) throw new Error('No company/tenant names found. Make sure your spreadsheet has a column named "Tenant", "Company Name", or "Tenant/Company".')
+        const validRows = allMapped.filter((c): c is NonNullable<typeof c> => !!c && !!(c.name?.trim()))
+        const redSkipped = allMapped.filter(c => c === null).length
+        if (validRows.length === 0) throw new Error('No company/tenant names found. Make sure your spreadsheet has a column named "Tenant", "Company Name", or "Tenant/Company".')
+
+        // Deduplicate within the file itself
+        const seenInFile = new Set<string>()
+        const deduped = validRows.filter(c => {
+          const key = c.name.trim().toLowerCase()
+          if (seenInFile.has(key)) return false
+          seenInFile.add(key)
+          return true
+        })
+        const fileDupes = validRows.length - deduped.length
+
+        // Check against existing companies in DB
+        const { data: existing } = await supabase.from('companies').select('name')
+        const existingNames = new Set((existing || []).map(e => e.name.trim().toLowerCase()))
+        const toInsert = deduped.filter(c => !existingNames.has(c.name.trim().toLowerCase()))
+        const dbDupes = deduped.length - toInsert.length
+
+        if (toInsert.length === 0) throw new Error('All companies already exist in the CRM.')
         await supabase.from('companies').insert(toInsert)
-        setUploadResult({ count: toInsert.length, type: `companies${skipped > 0 ? ` (${skipped} red rows skipped, green = high priority)` : ''}` })
+
+        const notes = [
+          redSkipped > 0 && `${redSkipped} red rows skipped`,
+          fileDupes > 0 && `${fileDupes} duplicates within file removed`,
+          dbDupes > 0 && `${dbDupes} already in CRM skipped`,
+        ].filter(Boolean).join(', ')
+        setUploadResult({ count: toInsert.length, type: `companies${notes ? ` · ${notes}` : ''}` })
       } else {
         const toInsert = rows.map(row => {
           const fullName = getCol(row, 'Name', 'Full Name', 'Contact Name')

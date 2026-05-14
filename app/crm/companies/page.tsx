@@ -11,14 +11,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { CompanyDialog } from '@/components/crm/company-dialog'
 import { Plus, Search, ExternalLink } from 'lucide-react'
 
-const STAGE_COLOR: Record<string, string> = {
-  prospect: 'bg-gray-100 text-gray-700',
-  qualifying: 'bg-yellow-100 text-yellow-700',
-  active: 'bg-blue-100 text-blue-700',
-  nurturing: 'bg-purple-100 text-purple-700',
-  won: 'bg-green-100 text-green-700',
-  lost: 'bg-red-100 text-red-700',
-  disqualified: 'bg-gray-100 text-gray-500',
+type CompanyWithLease = Company & {
+  property_name?: string
+  address?: string
+  owner_sublessor?: string
+  date_leased?: string
+  lease_term?: string
+  leased_sf?: number
+  base_rent?: string
+  expiration_date?: string
+  listing_agents?: string
+  procuring_agents?: string
 }
 
 const PRIORITY_DOT: Record<string, string> = {
@@ -28,7 +31,7 @@ const PRIORITY_DOT: Record<string, string> = {
 }
 
 export default function CompaniesPage() {
-  const [companies, setCompanies] = useState<Company[]>([])
+  const [companies, setCompanies] = useState<CompanyWithLease[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [verticalFilter, setVerticalFilter] = useState('all')
@@ -39,7 +42,7 @@ export default function CompaniesPage() {
 
   const fetchCompanies = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('companies').select('*').order('updated_at', { ascending: false })
+    let q = supabase.from('companies').select('*').order('name', { ascending: true })
     if (verticalFilter !== 'all') q = q.eq('vertical', verticalFilter)
     if (stageFilter !== 'all') q = q.eq('stage', stageFilter)
     if (trackFilter !== 'all') q = q.eq('track', trackFilter)
@@ -52,10 +55,14 @@ export default function CompaniesPage() {
   useEffect(() => { fetchCompanies() }, [fetchCompanies])
 
   const openNew = () => { setSelected(null); setDialogOpen(true) }
-  const openEdit = (c: Company) => { setSelected(c); setDialogOpen(true) }
+  const openEdit = (c: CompanyWithLease) => { setSelected(c as Company); setDialogOpen(true) }
+
+  const fmt = (v: unknown) => v ? String(v) : '—'
+  const fmtDate = (v?: string) => v ? new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—'
+  const fmtSF = (v?: number) => v ? v.toLocaleString() : '—'
 
   return (
-    <div className="p-6 space-y-4 max-w-7xl mx-auto">
+    <div className="p-6 space-y-4 max-w-full mx-auto">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Companies</h1>
@@ -70,12 +77,7 @@ export default function CompaniesPage() {
       <div className="flex flex-wrap gap-2">
         <div className="relative">
           <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search companies…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 w-56 h-9"
-          />
+          <Input placeholder="Search companies…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8 w-56 h-9" />
         </div>
         <Select value={trackFilter} onValueChange={(v) => v != null && setTrackFilter(v)}>
           <SelectTrigger className="w-32 h-9"><SelectValue placeholder="Track" /></SelectTrigger>
@@ -114,64 +116,54 @@ export default function CompaniesPage() {
             <p className="text-sm text-muted-foreground text-center py-12">No companies found.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm whitespace-nowrap">
                 <thead>
-                  <tr className="border-b border-border bg-muted/40">
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Company</th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Vertical</th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Stage</th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Track</th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Priority</th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Trigger</th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">SF Need</th>
-                    <th className="px-4 py-3"></th>
+                  <tr className="border-b border-border bg-muted/40 sticky top-0">
+                    <th className="text-left px-3 py-3 font-medium text-muted-foreground">Tenant / Company</th>
+                    <th className="text-left px-3 py-3 font-medium text-muted-foreground">Property</th>
+                    <th className="text-left px-3 py-3 font-medium text-muted-foreground">Address</th>
+                    <th className="text-left px-3 py-3 font-medium text-muted-foreground">Owner / Sublessor</th>
+                    <th className="text-left px-3 py-3 font-medium text-muted-foreground">Date Leased</th>
+                    <th className="text-left px-3 py-3 font-medium text-muted-foreground">Term</th>
+                    <th className="text-left px-3 py-3 font-medium text-muted-foreground">Leased SF</th>
+                    <th className="text-left px-3 py-3 font-medium text-muted-foreground">Base Rent</th>
+                    <th className="text-left px-3 py-3 font-medium text-muted-foreground">Expiration</th>
+                    <th className="text-left px-3 py-3 font-medium text-muted-foreground">Listing Agents</th>
+                    <th className="text-left px-3 py-3 font-medium text-muted-foreground">Procuring Agents</th>
+                    <th className="text-left px-3 py-3 font-medium text-muted-foreground">Priority</th>
+                    <th className="text-left px-3 py-3 font-medium text-muted-foreground">Notes</th>
+                    <th className="px-3 py-3"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {companies.map((c) => (
-                    <tr
-                      key={c.id}
-                      className="hover:bg-muted/30 cursor-pointer"
-                      onClick={() => openEdit(c)}
-                    >
-                      <td className="px-4 py-3">
+                    <tr key={c.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => openEdit(c)}>
+                      <td className="px-3 py-2.5">
                         <div>
                           <p className="font-medium">{c.name}</p>
                           {c.location && <p className="text-xs text-muted-foreground">{c.location}</p>}
                         </div>
                       </td>
-                      <td className="px-4 py-3">
-                        {c.vertical && <Badge variant="outline" className="text-xs">{c.vertical}</Badge>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium capitalize ${STAGE_COLOR[c.stage] || ''}`}>
-                          {c.stage}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge variant="outline" className="text-xs">Track {c.track}</Badge>
-                      </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-2.5 text-xs">{fmt(c.property_name)}</td>
+                      <td className="px-3 py-2.5 text-xs max-w-40"><p className="truncate">{fmt(c.address)}</p></td>
+                      <td className="px-3 py-2.5 text-xs max-w-40"><p className="truncate">{fmt(c.owner_sublessor)}</p></td>
+                      <td className="px-3 py-2.5 text-xs">{fmtDate(c.date_leased)}</td>
+                      <td className="px-3 py-2.5 text-xs">{fmt(c.lease_term)}</td>
+                      <td className="px-3 py-2.5 text-xs">{fmtSF(c.leased_sf)}</td>
+                      <td className="px-3 py-2.5 text-xs">{fmt(c.base_rent)}</td>
+                      <td className="px-3 py-2.5 text-xs">{fmtDate(c.expiration_date)}</td>
+                      <td className="px-3 py-2.5 text-xs max-w-36"><p className="truncate">{fmt(c.listing_agents)}</p></td>
+                      <td className="px-3 py-2.5 text-xs max-w-36"><p className="truncate">{fmt(c.procuring_agents)}</p></td>
+                      <td className="px-3 py-2.5">
                         <div className="flex items-center gap-1.5">
                           <span className={`w-2 h-2 rounded-full ${PRIORITY_DOT[c.priority] || 'bg-gray-400'}`} />
                           <span className="capitalize text-xs">{c.priority}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 max-w-xs">
-                        <p className="text-xs text-muted-foreground truncate">{c.trigger_signal || '—'}</p>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">
-                        {c.estimated_sf ? `${c.estimated_sf.toLocaleString()} SF` : '—'}
-                      </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-2.5 text-xs max-w-48"><p className="truncate text-muted-foreground">{fmt(c.notes)}</p></td>
+                      <td className="px-3 py-2.5">
                         {c.website && (
-                          <a
-                            href={c.website}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-muted-foreground hover:text-foreground"
-                          >
+                          <a href={c.website} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-muted-foreground hover:text-foreground">
                             <ExternalLink className="w-3.5 h-3.5" />
                           </a>
                         )}
@@ -185,12 +177,7 @@ export default function CompaniesPage() {
         </CardContent>
       </Card>
 
-      <CompanyDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        company={selected}
-        onSaved={fetchCompanies}
-      />
+      <CompanyDialog open={dialogOpen} onOpenChange={setDialogOpen} company={selected} onSaved={fetchCompanies} />
     </div>
   )
 }
