@@ -109,7 +109,7 @@ Return JSON: { "subject": "...", "body": "..." }`,
     {
       id: 'lease-expiry-outreach',
       title: 'Lease Expiration Angle',
-      description: 'Draft an outreach email targeting the upcoming lease expiration as the hook — position C&W to help them evaluate options before it's too late.',
+      description: "Draft an outreach email targeting the upcoming lease expiration as the hook — position C&W to help them evaluate options before it's too late.",
       icon: Mail,
       badge: 'High Convert',
       prompt: `Write a lease expiration outreach email from Cushman & Wakefield for ${company.name}.
