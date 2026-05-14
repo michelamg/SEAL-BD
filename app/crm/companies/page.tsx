@@ -42,7 +42,7 @@ export default function CompaniesPage() {
 
   const fetchCompanies = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('companies').select('*').order('name', { ascending: true })
+    let q = supabase.from('companies').select('*, contacts(id)').order('name', { ascending: true })
     if (verticalFilter !== 'all') q = q.eq('vertical', verticalFilter)
     if (stageFilter !== 'all') q = q.eq('stage', stageFilter)
     if (trackFilter !== 'all') q = q.eq('track', trackFilter)
@@ -120,6 +120,7 @@ export default function CompaniesPage() {
                 <thead>
                   <tr className="border-b border-border bg-muted/40 sticky top-0">
                     <th className="text-left px-3 py-3 font-medium text-muted-foreground">Tenant / Company</th>
+                    <th className="text-left px-3 py-3 font-medium text-muted-foreground">Contacts</th>
                     <th className="text-left px-3 py-3 font-medium text-muted-foreground">Property</th>
                     <th className="text-left px-3 py-3 font-medium text-muted-foreground">Address</th>
                     <th className="text-left px-3 py-3 font-medium text-muted-foreground">Owner / Sublessor</th>
@@ -143,6 +144,15 @@ export default function CompaniesPage() {
                           <p className="font-medium">{c.name}</p>
                           {c.location && <p className="text-xs text-muted-foreground">{c.location}</p>}
                         </div>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                        {((c as any).contacts?.length || 0) > 0 ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                            {(c as any).contacts.length} contact{(c as any).contacts.length !== 1 ? 's' : ''}
+                          </span>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
                       </td>
                       <td className="px-3 py-2.5 text-xs">{fmt(c.property_name)}</td>
                       <td className="px-3 py-2.5 text-xs max-w-40"><p className="truncate">{fmt(c.address)}</p></td>

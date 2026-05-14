@@ -244,23 +244,39 @@ export default function ImportsPage() {
         ].filter(Boolean).join(', ')
         setUploadResult({ count: toInsert.length, type: `companies${notes ? ` · ${notes}` : ''}` })
       } else {
+        // Load all existing companies for name matching
+        const { data: existingCompanies } = await supabase.from('companies').select('id, name')
+        const companyMap = new Map<string, string>()
+        ;(existingCompanies || []).forEach(c => companyMap.set(c.name.trim().toLowerCase(), c.id))
+
         const toInsert = rows.map(row => {
           const fullName = getCol(row, 'Name', 'Full Name', 'Contact Name')
           const [first, ...rest] = fullName.split(' ')
+
+          // Auto-match company by name from spreadsheet
+          const companyName = getCol(row, 'Company', 'Company Name', 'Tenant', 'Tenant/Company', 'Organization', 'Employer')
+          const matchedCompanyId = companyName
+            ? companyMap.get(companyName.trim().toLowerCase()) || null
+            : null
+
           return {
             first_name: getCol(row, 'First Name', 'First') || first || '',
             last_name: getCol(row, 'Last Name', 'Last') || rest.join(' ') || '',
-            title: getCol(row, 'Title', 'Job Title', 'Position'),
+            title: getCol(row, 'Title', 'Job Title', 'Position', 'Role'),
             email: getCol(row, 'Email', 'Email Address', 'Work Email'),
-            phone: getCol(row, 'Phone', 'Phone Number', 'Mobile'),
-            linkedin_url: getCol(row, 'LinkedIn', 'LinkedIn URL'),
-            company_id: importCompanyId || null,
+            phone: getCol(row, 'Phone', 'Phone Number', 'Mobile', 'Direct'),
+            linkedin_url: getCol(row, 'LinkedIn', 'LinkedIn URL', 'LinkedIn Profile'),
+            is_c_suite: ['ceo','cfo','coo','cto','president','chief','founder','partner','managing director']
+              .some(k => getCol(row, 'Title', 'Job Title', 'Position').toLowerCase().includes(k)),
+            company_id: importCompanyId || matchedCompanyId || null,
+            notes: getCol(row, 'Notes', 'Comments', 'Remarks'),
             source: 'import',
           }
         }).filter(c => c.first_name || c.last_name || c.email)
         if (toInsert.length === 0) throw new Error('No contacts found. Check your column headers.')
         await supabase.from('contacts').insert(toInsert)
-        setUploadResult({ count: toInsert.length, type: 'contacts' })
+        const matched = toInsert.filter(c => c.company_id).length
+        setUploadResult({ count: toInsert.length, type: `contacts${matched > 0 ? ` · ${matched} auto-linked to companies` : ''}` })
       }
       setPreview([])
       setPreviewFile(null)
