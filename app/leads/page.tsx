@@ -43,10 +43,13 @@ export default function LeadsPage() {
     setTriggers((prev) => prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id])
   }
 
+  const [error, setError] = useState<string | null>(null)
+
   const search = async () => {
     if (!industry) return
     setLoading(true)
     setResults([])
+    setError(null)
     try {
       const res = await fetch('/api/leads', {
         method: 'POST',
@@ -54,7 +57,11 @@ export default function LeadsPage() {
         body: JSON.stringify({ industry, location, companySize: size, triggerSignals: triggers, count: parseInt(count), vertical }),
       })
       const data = await res.json()
+      if (data.error) throw new Error(data.error)
       setResults(data.leads || [])
+      if ((data.leads || []).length === 0) setError('No leads returned. Try a different industry or location.')
+    } catch (err) {
+      setError(String(err))
     } finally {
       setLoading(false)
     }
@@ -168,6 +175,13 @@ export default function LeadsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Error */}
+      {error && !loading && (
+        <div className="flex items-start gap-2 text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm">
+          <span className="font-medium">Error:</span> {error}
+        </div>
+      )}
 
       {/* Results */}
       {results.length > 0 && (
