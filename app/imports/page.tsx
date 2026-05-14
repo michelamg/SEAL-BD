@@ -64,7 +64,24 @@ function parseSpreadsheet(file: File): Promise<Record<string, string>[]> {
 }
 
 function getCol(row: Record<string, string>, ...keys: string[]) {
-  return keys.map(k => row[k]).find(v => v && String(v).trim()) || ''
+  // Case-insensitive, trim-insensitive column lookup
+  const rowKeys = Object.keys(row)
+  for (const key of keys) {
+    // Try exact match first
+    if (row[key] !== undefined && String(row[key]).trim()) return String(row[key]).trim()
+    // Try case-insensitive match
+    const found = rowKeys.find(k => k.trim().toLowerCase() === key.toLowerCase())
+    if (found && String(row[found]).trim()) return String(row[found]).trim()
+  }
+  return ''
+}
+
+function parseSF(val: string): number | undefined {
+  if (!val) return undefined
+  // Remove commas, spaces, "SF", "sq ft" etc and parse
+  const cleaned = val.replace(/,/g, '').replace(/[^0-9.]/g, '')
+  const n = parseFloat(cleaned)
+  return isNaN(n) ? undefined : Math.round(n)
 }
 
 export default function ImportsPage() {
@@ -172,11 +189,11 @@ export default function ImportsPage() {
             owner_sublessor: getCol(row, 'Owner/Sublessor', 'Owner', 'Sublessor', 'Landlord'),
             date_leased: getCol(row, 'Date Leased', 'Lease Date', 'Commencement') || null,
             lease_term: getCol(row, 'Term', 'Lease Term', 'Duration'),
-            leased_sf: parseInt(getCol(row, 'Leased SF', 'SF', 'Size (SF)', 'Square Feet', 'RSF')) || undefined,
-            base_rent: getCol(row, 'Base Rent', 'Rent', 'Rate', 'Annual Rent'),
-            expiration_date: getCol(row, 'Expiration', 'Lease Expiration', 'Expiry', 'Expire Date') || null,
-            listing_agents: getCol(row, 'Listing Agents', 'Listing Agent', 'LL Rep', 'Landlord Rep'),
-            procuring_agents: getCol(row, 'Procuring Agents', 'Procuring Agent', 'Tenant Rep', 'Tenant Agent'),
+            leased_sf: parseSF(getCol(row, 'Leased SF', 'RSF', 'SF', 'Size (SF)', 'Square Feet', 'NRA', 'Leased RSF')),
+            base_rent: getCol(row, 'Base Rent', 'Starting Rent', 'Rent', 'Rate', 'Annual Rent', 'Base Rent (PSF)'),
+            expiration_date: getCol(row, 'Expiration', 'Lease Expiration', 'Expiry', 'Expire Date', 'Expiration Date') || null,
+            listing_agents: getCol(row, 'Listing Agents', 'Listing Agent', 'Listing Agent(s)', 'LL Agent', 'LL Rep', 'Landlord Rep', 'Landlord Agent'),
+            procuring_agents: getCol(row, 'Procuring Agents', 'Procuring Agent', 'Procuring Agent(s)', 'Tenant Rep', 'Tenant Agent', 'Tenant Broker', 'Procuring Broker'),
             priority,
             track: 'A' as const,
             stage: 'prospect' as const,
