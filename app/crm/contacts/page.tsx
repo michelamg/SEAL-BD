@@ -48,7 +48,7 @@ export default function ContactsPage() {
 
   const openEdit = (c: Contact & { companies?: { name: string } | null }) => {
     setEditContact(c)
-    setForm({ ...c, company_id: (c as Record<string, unknown>).company_id as string || '' })
+    setForm({ ...c, company_id: (c as unknown as Record<string, unknown>).company_id as string || '' })
     setAddOpen(true)
   }
 
