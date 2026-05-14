@@ -129,8 +129,15 @@ Return JSON array: [{
       temperature: 0.6,
     })
 
-    const aiData = JSON.parse(response.choices[0].message.content || '{"leads":[]}')
-    const leads = aiData.leads || aiData
+    const raw = response.choices[0].message.content || '{"leads":[]}'
+    const aiData = JSON.parse(raw)
+
+    // Handle any JSON structure OpenAI returns
+    const leads = Array.isArray(aiData)
+      ? aiData
+      : aiData.leads || aiData.companies || aiData.results || aiData.data
+        || Object.values(aiData).find(v => Array.isArray(v))
+        || []
 
     return Response.json({
       leads,
