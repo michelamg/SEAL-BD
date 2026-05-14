@@ -25,7 +25,7 @@ type CompanyWithLease = Company & {
 }
 
 const PRIORITY_DOT: Record<string, string> = {
-  high: 'bg-red-500',
+  high: 'bg-green-500',
   medium: 'bg-yellow-500',
   low: 'bg-gray-400',
 }
