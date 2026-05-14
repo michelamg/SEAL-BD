@@ -286,26 +286,72 @@ export default function ImportsPage() {
         ;(existingCompanies || []).forEach(c => companyMap.set(c.name.trim().toLowerCase(), c.id))
 
         const toInsert = rows.map(row => {
-          const fullName = getCol(row, 'Name', 'Full Name', 'Contact Name')
-          const [first, ...rest] = fullName.split(' ')
+          // Try every possible name column variation
+          const fullName = getCol(row,
+            'Name', 'Full Name', 'Contact Name', 'Contact', 'Person', 'Person Name',
+            'First & Last', 'First and Last', 'Display Name', 'Contact Full Name'
+          )
+          const firstName = getCol(row, 'First Name', 'First', 'Given Name', 'Fname', 'First_Name')
+          const lastName = getCol(row, 'Last Name', 'Last', 'Surname', 'Family Name', 'Lname', 'Last_Name')
 
-          // Auto-match company by name from spreadsheet
-          const companyName = getCol(row, 'Company', 'Company Name', 'Tenant', 'Tenant/Company', 'Organization', 'Employer')
-          const matchedCompanyId = companyName
-            ? companyMap.get(companyName.trim().toLowerCase()) || null
+          // Parse full name if split fields are empty
+          let derivedFirst = firstName
+          let derivedLast = lastName
+          if (!derivedFirst && !derivedLast && fullName) {
+            const parts = fullName.trim().split(/\s+/)
+            derivedFirst = parts[0] || ''
+            derivedLast = parts.slice(1).join(' ') || ''
+          }
+
+          // Get email
+          const email = getCol(row,
+            'Email', 'Email Address', 'Work Email', 'E-mail', 'E-Mail',
+            'Business Email', 'Corporate Email', 'Email 1', 'Primary Email'
+          )
+
+          // Auto-extract name from email if still empty (e.g. jsmith@company.com → J Smith)
+          if (!derivedFirst && !derivedLast && email) {
+            const localPart = email.split('@')[0]
+            const nameParts = localPart.replace(/[._-]/g, ' ').split(' ')
+            derivedFirst = nameParts[0] ? nameParts[0].charAt(0).toUpperCase() + nameParts[0].slice(1) : ''
+            derivedLast = nameParts[1] ? nameParts[1].charAt(0).toUpperCase() + nameParts[1].slice(1) : ''
+          }
+
+          // Get company — also try extracting from email domain
+          const companyName = getCol(row,
+            'Company', 'Company Name', 'Tenant', 'Tenant/Company', 'Organization',
+            'Employer', 'Firm', 'Business', 'Account', 'Account Name', 'Co.'
+          )
+
+          // Auto-extract company from email domain as fallback
+          let derivedCompanyName = companyName
+          if (!derivedCompanyName && email && email.includes('@')) {
+            const domain = email.split('@')[1]?.split('.')[0] || ''
+            if (domain && !['gmail','yahoo','hotmail','outlook','icloud','aol'].includes(domain)) {
+              derivedCompanyName = domain.charAt(0).toUpperCase() + domain.slice(1)
+            }
+          }
+
+          const matchedCompanyId = derivedCompanyName
+            ? companyMap.get(derivedCompanyName.trim().toLowerCase()) || null
             : null
 
+          const title = getCol(row,
+            'Title', 'Job Title', 'Position', 'Role', 'Designation',
+            'Job Function', 'Occupation', 'Function', 'Level', 'Seniority'
+          )
+
           return {
-            first_name: getCol(row, 'First Name', 'First') || first || '',
-            last_name: getCol(row, 'Last Name', 'Last') || rest.join(' ') || '',
-            title: getCol(row, 'Title', 'Job Title', 'Position', 'Role'),
-            email: getCol(row, 'Email', 'Email Address', 'Work Email'),
-            phone: getCol(row, 'Phone', 'Phone Number', 'Mobile', 'Direct'),
-            linkedin_url: getCol(row, 'LinkedIn', 'LinkedIn URL', 'LinkedIn Profile'),
+            first_name: derivedFirst,
+            last_name: derivedLast,
+            title,
+            email,
+            phone: getCol(row, 'Phone', 'Phone Number', 'Mobile', 'Direct', 'Cell', 'Work Phone', 'Tel', 'Telephone', 'Ph'),
+            linkedin_url: getCol(row, 'LinkedIn', 'LinkedIn URL', 'LinkedIn Profile', 'LinkedIn URL', 'LI'),
             is_c_suite: ['ceo','cfo','coo','cto','president','chief','founder','partner','managing director']
-              .some(k => getCol(row, 'Title', 'Job Title', 'Position').toLowerCase().includes(k)),
+              .some(k => title.toLowerCase().includes(k)),
             company_id: importCompanyId || matchedCompanyId || null,
-            notes: getCol(row, 'Notes', 'Comments', 'Remarks'),
+            notes: getCol(row, 'Notes', 'Comments', 'Remarks', 'Note', 'Memo') || (derivedCompanyName && !matchedCompanyId ? `Company: ${derivedCompanyName}` : ''),
             source: 'import',
           }
         }).filter(c => c.first_name || c.last_name || c.email)
