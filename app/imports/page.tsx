@@ -120,18 +120,30 @@ export default function ImportsPage() {
       const rows = await parseSpreadsheet(previewFile)
       if (importType === 'companies') {
         const toInsert = rows.map(row => ({
-          name: getCol(row, 'Company Name', 'Company', 'Tenant', 'Tenant Name', 'Name', 'Organization', 'Account', 'Client'),
+          name: getCol(row, 'Tenant/Company', 'Tenant', 'Company Name', 'Company', 'Tenant Name', 'Name', 'Organization', 'Account', 'Client'),
           website: getCol(row, 'Website', 'URL', 'Web'),
           industry: getCol(row, 'Industry', 'Sector', 'Vertical', 'Type'),
-          location: getCol(row, 'HQ Location', 'Location', 'City', 'Address', 'HQ City/State/Country', 'Property'),
+          location: getCol(row, 'HQ Location', 'Location', 'City', 'HQ City/State/Country'),
           size: getCol(row, 'Employees', 'Employee Count', 'Number of Employees', 'Size'),
-          description: getCol(row, 'Description', 'Business Description', 'Summary', 'Notes'),
-          trigger_signal: getCol(row, 'Last Financing Type', 'Last Deal Type', 'Funding', 'Trigger', 'Date Leased', 'Lease Date'),
+          description: getCol(row, 'Description', 'Business Description', 'Summary'),
+          notes: getCol(row, 'Notes', 'Comments', 'Remarks'),
+          trigger_signal: getCol(row, 'Last Financing Type', 'Last Deal Type', 'Funding', 'Trigger'),
+          // Lease fields
+          property_name: getCol(row, 'Property', 'Property Name', 'Building'),
+          address: getCol(row, 'Address', 'Street Address', 'Property Address'),
+          owner_sublessor: getCol(row, 'Owner/Sublessor', 'Owner', 'Sublessor', 'Landlord'),
+          date_leased: getCol(row, 'Date Leased', 'Lease Date', 'Commencement') || null,
+          lease_term: getCol(row, 'Term', 'Lease Term', 'Duration'),
+          leased_sf: parseInt(getCol(row, 'Leased SF', 'SF', 'Size (SF)', 'Square Feet', 'RSF')) || undefined,
+          base_rent: getCol(row, 'Base Rent', 'Rent', 'Rate', 'Annual Rent'),
+          expiration_date: getCol(row, 'Expiration', 'Lease Expiration', 'Expiry', 'Expire Date') || null,
+          listing_agents: getCol(row, 'Listing Agents', 'Listing Agent', 'LL Rep', 'Landlord Rep'),
+          procuring_agents: getCol(row, 'Procuring Agents', 'Procuring Agent', 'Tenant Rep', 'Tenant Agent'),
           track: 'A' as const,
           stage: 'prospect' as const,
           source: 'import',
         })).filter(c => c.name && c.name.trim())
-        if (toInsert.length === 0) throw new Error('No company/tenant names found. Make sure your spreadsheet has a column named "Company Name", "Tenant", "Name", or similar.')
+        if (toInsert.length === 0) throw new Error('No company/tenant names found. Make sure your spreadsheet has a column named "Tenant", "Company Name", or "Tenant/Company".')
         await supabase.from('companies').insert(toInsert)
         setUploadResult({ count: toInsert.length, type: 'companies' })
       } else {

@@ -68,88 +68,117 @@ export function CompanyDialog({ open, onOpenChange, company, onSaved }: Props) {
           </TabsList>
 
           <TabsContent value="details" className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
-                <Label>Company Name *</Label>
-                <Input value={form.name || ''} onChange={(e) => set('name', e.target.value)} />
+            {/* Core Info */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Company Info</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <Label>Tenant / Company Name *</Label>
+                  <Input value={form.name || ''} onChange={(e) => set('name', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Website</Label>
+                  <Input value={form.website || ''} onChange={(e) => set('website', e.target.value)} placeholder="https://" />
+                </div>
+                <div>
+                  <Label>Industry</Label>
+                  <Input value={form.industry || ''} onChange={(e) => set('industry', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Vertical</Label>
+                  <Select value={form.vertical || ''} onValueChange={(v) => set('vertical', v)}>
+                    <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                    <SelectContent>{VERTICALS.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Stage</Label>
+                  <Select value={form.stage || 'prospect'} onValueChange={(v) => set('stage', v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>{STAGES.map(s => <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Track</Label>
+                  <Select value={form.track || 'A'} onValueChange={(v) => set('track', v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="A">Track A — New Client</SelectItem>
+                      <SelectItem value="B">Track B — Listing</SelectItem>
+                      <SelectItem value="both">Both</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Priority</Label>
+                  <Select value={form.priority || 'medium'} onValueChange={(v) => set('priority', v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="low">Low</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Location</Label>
+                  <Input value={form.location || ''} onChange={(e) => set('location', e.target.value)} placeholder="City, State" />
+                </div>
+                <div>
+                  <Label>Trigger Signal</Label>
+                  <Input value={(form as Record<string, unknown>).trigger_signal as string || ''} onChange={(e) => set('trigger_signal' as keyof Company, e.target.value)} placeholder="e.g. Series B, expansion…" />
+                </div>
               </div>
-              <div>
-                <Label>Website</Label>
-                <Input value={form.website || ''} onChange={(e) => set('website', e.target.value)} placeholder="https://" />
-              </div>
-              <div>
-                <Label>Industry</Label>
-                <Input value={form.industry || ''} onChange={(e) => set('industry', e.target.value)} />
-              </div>
-              <div>
-                <Label>Vertical</Label>
-                <Select value={form.vertical || ''} onValueChange={(v) => set('vertical', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
-                  <SelectContent>{VERTICALS.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Stage</Label>
-                <Select value={form.stage || 'prospect'} onValueChange={(v) => set('stage', v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{STAGES.map(s => <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Track</Label>
-                <Select value={form.track || 'A'} onValueChange={(v) => set('track', v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="A">Track A — New Client</SelectItem>
-                    <SelectItem value="B">Track B — Listing</SelectItem>
-                    <SelectItem value="both">Both</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Priority</Label>
-                <Select value={form.priority || 'medium'} onValueChange={(v) => set('priority', v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="low">Low</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Location</Label>
-                <Input value={form.location || ''} onChange={(e) => set('location', e.target.value)} placeholder="City, State" />
-              </div>
-              <div>
-                <Label>Company Size</Label>
-                <Select value={form.size || ''} onValueChange={(v) => set('size', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
-                  <SelectContent>
-                    {['1-10','11-50','51-200','201-500','501-1000','1000+'].map(s => <SelectItem key={s} value={s}>{s} employees</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Estimated SF Need</Label>
-                <Input
-                  type="number"
-                  value={form.estimated_sf || ''}
-                  onChange={(e) => set('estimated_sf', parseInt(e.target.value) || undefined)}
-                  placeholder="e.g. 25000"
-                />
-              </div>
-              <div className="col-span-2">
-                <Label>Trigger Signal</Label>
-                <Input
-                  value={form.trigger_signal || ''}
-                  onChange={(e) => set('trigger_signal', e.target.value)}
-                  placeholder="e.g. $12M Series B raised March 2026"
-                />
-              </div>
-              <div className="col-span-2">
-                <Label>Notes</Label>
-                <Textarea value={form.notes || ''} onChange={(e) => set('notes', e.target.value)} rows={3} />
+            </div>
+
+            {/* Lease Info */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3 pt-2 border-t border-border">Lease Info</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Property</Label>
+                  <Input value={(form as Record<string, unknown>).property_name as string || ''} onChange={(e) => set('property_name' as keyof Company, e.target.value)} />
+                </div>
+                <div>
+                  <Label>Address</Label>
+                  <Input value={(form as Record<string, unknown>).address as string || ''} onChange={(e) => set('address' as keyof Company, e.target.value)} />
+                </div>
+                <div>
+                  <Label>Owner / Sublessor</Label>
+                  <Input value={(form as Record<string, unknown>).owner_sublessor as string || ''} onChange={(e) => set('owner_sublessor' as keyof Company, e.target.value)} />
+                </div>
+                <div>
+                  <Label>Date Leased</Label>
+                  <Input type="date" value={(form as Record<string, unknown>).date_leased as string || ''} onChange={(e) => set('date_leased' as keyof Company, e.target.value)} />
+                </div>
+                <div>
+                  <Label>Term</Label>
+                  <Input value={(form as Record<string, unknown>).lease_term as string || ''} onChange={(e) => set('lease_term' as keyof Company, e.target.value)} placeholder="e.g. 60 Mos." />
+                </div>
+                <div>
+                  <Label>Leased SF</Label>
+                  <Input type="number" value={(form as Record<string, unknown>).leased_sf as number || ''} onChange={(e) => set('leased_sf' as keyof Company, parseInt(e.target.value) || undefined)} />
+                </div>
+                <div>
+                  <Label>Base Rent</Label>
+                  <Input value={(form as Record<string, unknown>).base_rent as string || ''} onChange={(e) => set('base_rent' as keyof Company, e.target.value)} placeholder="e.g. $45/SF/yr" />
+                </div>
+                <div>
+                  <Label>Expiration</Label>
+                  <Input type="date" value={(form as Record<string, unknown>).expiration_date as string || ''} onChange={(e) => set('expiration_date' as keyof Company, e.target.value)} />
+                </div>
+                <div>
+                  <Label>Listing Agents</Label>
+                  <Input value={(form as Record<string, unknown>).listing_agents as string || ''} onChange={(e) => set('listing_agents' as keyof Company, e.target.value)} />
+                </div>
+                <div>
+                  <Label>Procuring Agents</Label>
+                  <Input value={(form as Record<string, unknown>).procuring_agents as string || ''} onChange={(e) => set('procuring_agents' as keyof Company, e.target.value)} />
+                </div>
+                <div className="col-span-2">
+                  <Label>Notes</Label>
+                  <Textarea value={form.notes || ''} onChange={(e) => set('notes', e.target.value)} rows={2} />
+                </div>
               </div>
             </div>
           </TabsContent>
