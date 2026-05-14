@@ -182,7 +182,21 @@ export default function ImportsPage() {
             location: getCol(row, 'HQ Location', 'Location', 'City', 'HQ City/State/Country'),
             size: getCol(row, 'Employees', 'Employee Count', 'Number of Employees', 'Size'),
             description: getCol(row, 'Description', 'Business Description', 'Summary'),
-            notes: getCol(row, 'Notes', 'Comments', 'Remarks'),
+            notes: (() => {
+              // Grab explicit notes column first
+              const explicit = getCol(row, 'Notes', 'Comments', 'Remarks', 'Note', 'Comment')
+              if (explicit) return explicit
+              // Also sweep all columns for any values in unnamed/extra columns (Column2, Column3, etc.)
+              const extraParts = Object.entries(row)
+                .filter(([k, v]) => {
+                  if (!v || !String(v).trim()) return false
+                  const kl = k.toLowerCase()
+                  // Only grab truly "extra" unnamed columns
+                  return kl.startsWith('column') || kl === '__empty' || kl === '__empty_1' || kl === '__empty_2' || kl.startsWith('unnamed')
+                })
+                .map(([k, v]) => `${k}: ${v}`)
+              return extraParts.join(' | ') || ''
+            })(),
             trigger_signal: getCol(row, 'Last Financing Type', 'Last Deal Type', 'Funding', 'Trigger'),
             property_name: getCol(row, 'Property', 'Property Name', 'Building'),
             address: getCol(row, 'Address', 'Street Address', 'Property Address'),
@@ -192,8 +206,8 @@ export default function ImportsPage() {
             leased_sf: parseSF(getCol(row, 'Leased SF', 'RSF', 'SF', 'Size (SF)', 'Square Feet', 'NRA', 'Leased RSF')),
             base_rent: getCol(row, 'Base Rent', 'Starting Rent', 'Rent', 'Rate', 'Annual Rent', 'Base Rent (PSF)'),
             expiration_date: getCol(row, 'Expiration', 'Lease Expiration', 'Expiry', 'Expire Date', 'Expiration Date') || null,
-            listing_agents: getCol(row, 'Listing Agents', 'Listing Agent', 'Listing Agent(s)', 'LL Agent', 'LL Rep', 'Landlord Rep', 'Landlord Agent'),
-            procuring_agents: getCol(row, 'Procuring Agents', 'Procuring Agent', 'Procuring Agent(s)', 'Tenant Rep', 'Tenant Agent', 'Tenant Broker', 'Procuring Broker'),
+            listing_agents: getCol(row, 'Listing Agents / Contact Info', 'Listing Agents/Contact Info', 'Listing Agents', 'Listing Agent', 'Listing Agent(s)', 'LL Agent', 'LL Rep', 'Landlord Rep', 'Landlord Agent'),
+            procuring_agents: getCol(row, 'Procuring Agents / Contact Info', 'Procuring Agents/Contact Info', 'Procuring Agents', 'Procuring Agent', 'Procuring Agent(s)', 'Tenant Rep', 'Tenant Agent', 'Tenant Broker', 'Procuring Broker'),
             priority,
             track: 'A' as const,
             stage: 'prospect' as const,
