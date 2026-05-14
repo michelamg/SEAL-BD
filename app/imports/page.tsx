@@ -13,22 +13,54 @@ import { UploadCloud, FileText, CheckCircle, AlertCircle, Loader2 } from 'lucide
 import { format } from 'date-fns'
 import * as XLSX from 'xlsx'
 
-// Parse any spreadsheet (CSV or Excel) into rows
-function parseSpreadsheet(file: File): Promise<Record<string, string>[]> {
+// Detect row color from Excel cell fill → returns 'red' | 'green' | 'yellow' | null
+function detectRowColor(ws: XLSX.WorkSheet, rowIndex: number): 'red' | 'green' | 'yellow' | null {
+  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1')
+  // Check first few cells in the row for a fill color
+  for (let col = range.s.c; col <= Math.min(range.s.c + 5, range.e.c); col++) {
+    const addr = XLSX.utils.encode_cell({ r: rowIndex, c: col })
+    const cell = ws[addr]
+    if (!cell?.s?.fill) continue
+    const fill = cell.s.fill
+    const rgb: string = fill.fgColor?.rgb || fill.bgColor?.rgb || ''
+    if (!rgb || rgb === 'FFFFFF' || rgb === 'FF000000' || rgb.length < 6) continue
+    // ARGB format: last 6 chars are RRGGBB
+    const hex = rgb.slice(-6).toUpperCase()
+    const r = parseInt(hex.slice(0, 2), 16)
+    const g = parseInt(hex.slice(2, 4), 16)
+    const b = parseInt(hex.slice(4, 6), 16)
+    // Red: high R, low G+B
+    if (r > 180 && g < 100 && b < 100) return 'red'
+    // Green: high G, low R+B
+    if (g > 150 && r < 150 && b < 100) return 'green'
+    // Yellow/Orange: high R+G, low B
+    if (r > 180 && g > 130 && b < 100) return 'yellow'
+  }
+  return null
+}
+
+// Parse spreadsheet with cell style support for color detection
+function parseSpreadsheetWithColors(file: File): Promise<{ rows: Record<string, string>[]; ws: XLSX.WorkSheet; headerRow: number }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = (e) => {
       try {
         const data = e.target?.result
-        const wb = XLSX.read(data, { type: 'binary' })
+        const wb = XLSX.read(data, { type: 'binary', cellStyles: true })
         const ws = wb.Sheets[wb.SheetNames[0]]
         const rows = XLSX.utils.sheet_to_json<Record<string, string>>(ws, { defval: '' })
-        resolve(rows)
+        const range = XLSX.utils.decode_range(ws['!ref'] || 'A1')
+        resolve({ rows, ws, headerRow: range.s.r })
       } catch (err) { reject(err) }
     }
     reader.onerror = reject
     reader.readAsBinaryString(file)
   })
+}
+
+// Parse any spreadsheet (CSV or Excel) into rows — simple version for non-color use
+function parseSpreadsheet(file: File): Promise<Record<string, string>[]> {
+  return parseSpreadsheetWithColors(file).then(r => r.rows)
 }
 
 function getCol(row: Record<string, string>, ...keys: string[]) {
@@ -117,35 +149,45 @@ export default function ImportsPage() {
     if (!previewFile) return
     setUploading(true); reset()
     try {
-      const rows = await parseSpreadsheet(previewFile)
+      const { rows, ws, headerRow } = await parseSpreadsheetWithColors(previewFile)
       if (importType === 'companies') {
-        const toInsert = rows.map(row => ({
-          name: getCol(row, 'Tenant/Company', 'Tenant', 'Company Name', 'Company', 'Tenant Name', 'Name', 'Organization', 'Account', 'Client'),
-          website: getCol(row, 'Website', 'URL', 'Web'),
-          industry: getCol(row, 'Industry', 'Sector', 'Vertical', 'Type'),
-          location: getCol(row, 'HQ Location', 'Location', 'City', 'HQ City/State/Country'),
-          size: getCol(row, 'Employees', 'Employee Count', 'Number of Employees', 'Size'),
-          description: getCol(row, 'Description', 'Business Description', 'Summary'),
-          notes: getCol(row, 'Notes', 'Comments', 'Remarks'),
-          trigger_signal: getCol(row, 'Last Financing Type', 'Last Deal Type', 'Funding', 'Trigger'),
-          // Lease fields
-          property_name: getCol(row, 'Property', 'Property Name', 'Building'),
-          address: getCol(row, 'Address', 'Street Address', 'Property Address'),
-          owner_sublessor: getCol(row, 'Owner/Sublessor', 'Owner', 'Sublessor', 'Landlord'),
-          date_leased: getCol(row, 'Date Leased', 'Lease Date', 'Commencement') || null,
-          lease_term: getCol(row, 'Term', 'Lease Term', 'Duration'),
-          leased_sf: parseInt(getCol(row, 'Leased SF', 'SF', 'Size (SF)', 'Square Feet', 'RSF')) || undefined,
-          base_rent: getCol(row, 'Base Rent', 'Rent', 'Rate', 'Annual Rent'),
-          expiration_date: getCol(row, 'Expiration', 'Lease Expiration', 'Expiry', 'Expire Date') || null,
-          listing_agents: getCol(row, 'Listing Agents', 'Listing Agent', 'LL Rep', 'Landlord Rep'),
-          procuring_agents: getCol(row, 'Procuring Agents', 'Procuring Agent', 'Tenant Rep', 'Tenant Agent'),
-          track: 'A' as const,
-          stage: 'prospect' as const,
-          source: 'import',
-        })).filter(c => c.name && c.name.trim())
+        const allMapped = rows.map((row, i) => {
+          const rowIndex = headerRow + 1 + i // +1 for header row
+          const color = detectRowColor(ws, rowIndex)
+          if (color === 'red') return null // skip red rows
+
+          const priority = color === 'green' ? 'high' : color === 'yellow' ? 'medium' : 'medium'
+
+          return {
+            name: getCol(row, 'Tenant/Company', 'Tenant', 'Company Name', 'Company', 'Tenant Name', 'Name', 'Organization', 'Account', 'Client'),
+            website: getCol(row, 'Website', 'URL', 'Web'),
+            industry: getCol(row, 'Industry', 'Sector', 'Vertical', 'Type'),
+            location: getCol(row, 'HQ Location', 'Location', 'City', 'HQ City/State/Country'),
+            size: getCol(row, 'Employees', 'Employee Count', 'Number of Employees', 'Size'),
+            description: getCol(row, 'Description', 'Business Description', 'Summary'),
+            notes: getCol(row, 'Notes', 'Comments', 'Remarks'),
+            trigger_signal: getCol(row, 'Last Financing Type', 'Last Deal Type', 'Funding', 'Trigger'),
+            property_name: getCol(row, 'Property', 'Property Name', 'Building'),
+            address: getCol(row, 'Address', 'Street Address', 'Property Address'),
+            owner_sublessor: getCol(row, 'Owner/Sublessor', 'Owner', 'Sublessor', 'Landlord'),
+            date_leased: getCol(row, 'Date Leased', 'Lease Date', 'Commencement') || null,
+            lease_term: getCol(row, 'Term', 'Lease Term', 'Duration'),
+            leased_sf: parseInt(getCol(row, 'Leased SF', 'SF', 'Size (SF)', 'Square Feet', 'RSF')) || undefined,
+            base_rent: getCol(row, 'Base Rent', 'Rent', 'Rate', 'Annual Rent'),
+            expiration_date: getCol(row, 'Expiration', 'Lease Expiration', 'Expiry', 'Expire Date') || null,
+            listing_agents: getCol(row, 'Listing Agents', 'Listing Agent', 'LL Rep', 'Landlord Rep'),
+            procuring_agents: getCol(row, 'Procuring Agents', 'Procuring Agent', 'Tenant Rep', 'Tenant Agent'),
+            priority,
+            track: 'A' as const,
+            stage: 'prospect' as const,
+            source: 'import',
+          }
+        })
+        const toInsert = allMapped.filter((c): c is NonNullable<typeof c> => !!c && !!(c.name?.trim()))
+        const skipped = allMapped.filter(c => c === null).length
         if (toInsert.length === 0) throw new Error('No company/tenant names found. Make sure your spreadsheet has a column named "Tenant", "Company Name", or "Tenant/Company".')
         await supabase.from('companies').insert(toInsert)
-        setUploadResult({ count: toInsert.length, type: 'companies' })
+        setUploadResult({ count: toInsert.length, type: `companies${skipped > 0 ? ` (${skipped} red rows skipped, green = high priority)` : ''}` })
       } else {
         const toInsert = rows.map(row => {
           const fullName = getCol(row, 'Name', 'Full Name', 'Contact Name')
