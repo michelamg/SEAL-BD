@@ -270,21 +270,34 @@ export default function ImportsPage() {
         })
         const fileDupes = validRows.length - deduped.length
 
-        // Check against existing companies in DB
-        const { data: existing } = await supabase.from('companies').select('name')
-        const existingNames = new Set((existing || []).map(e => e.name.trim().toLowerCase()))
-        const toInsert = deduped.filter(c => !existingNames.has(c.name.trim().toLowerCase()))
-        const dbDupes = deduped.length - toInsert.length
+        // UPSERT: load existing companies, update if exists, insert if new
+        const { data: existingCompanies } = await supabase.from('companies').select('id, name')
+        const existingMap = new Map((existingCompanies || []).map(e => [e.name.trim().toLowerCase(), e.id]))
 
-        if (toInsert.length === 0) throw new Error('All companies already exist in the CRM.')
-        await supabase.from('companies').insert(toInsert)
+        const toInsert = deduped.filter(c => !existingMap.has(c.name.trim().toLowerCase()))
+        const toUpdate = deduped.filter(c => existingMap.has(c.name.trim().toLowerCase()))
+
+        // Insert new companies
+        if (toInsert.length > 0) await supabase.from('companies').insert(toInsert)
+
+        // Update existing companies with fresh data (skip null/empty values)
+        for (const c of toUpdate) {
+          const id = existingMap.get(c.name.trim().toLowerCase())
+          if (!id) continue
+          // Only update fields that have actual values
+          const updates = Object.fromEntries(
+            Object.entries(c).filter(([, v]) => v !== null && v !== undefined && v !== '')
+          )
+          await supabase.from('companies').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id)
+        }
 
         const notes = [
           redSkipped > 0 && `${redSkipped} red rows skipped`,
-          fileDupes > 0 && `${fileDupes} duplicates within file removed`,
-          dbDupes > 0 && `${dbDupes} already in CRM skipped`,
-        ].filter(Boolean).join(', ')
-        setUploadResult({ count: toInsert.length, type: `companies${notes ? ` · ${notes}` : ''}` })
+          fileDupes > 0 && `${fileDupes} in-file dupes removed`,
+          toInsert.length > 0 && `${toInsert.length} new added`,
+          toUpdate.length > 0 && `${toUpdate.length} existing updated`,
+        ].filter(Boolean).join(' · ')
+        setUploadResult({ count: deduped.length, type: `companies · ${notes}` })
       } else {
         // Load all existing companies for name matching
         const { data: existingCompanies } = await supabase.from('companies').select('id, name')
@@ -362,9 +375,32 @@ export default function ImportsPage() {
           }
         }).filter(c => c.first_name || c.last_name || c.email)
         if (toInsert.length === 0) throw new Error('No contacts found. Check your column headers.')
-        await supabase.from('contacts').insert(toInsert)
+
+        // UPSERT contacts by email
+        const { data: existingContacts } = await supabase.from('contacts').select('id, email')
+        const existingEmailMap = new Map((existingContacts || [])
+          .filter(c => c.email)
+          .map(c => [c.email.trim().toLowerCase(), c.id]))
+
+        const newContacts = toInsert.filter(c => !c.email || !existingEmailMap.has(c.email.trim().toLowerCase()))
+        const updateContacts = toInsert.filter(c => c.email && existingEmailMap.has(c.email.trim().toLowerCase()))
+
+        if (newContacts.length > 0) await supabase.from('contacts').insert(newContacts)
+
+        for (const c of updateContacts) {
+          const id = existingEmailMap.get(c.email!.trim().toLowerCase())
+          if (!id) continue
+          const updates = Object.fromEntries(Object.entries(c).filter(([, v]) => v !== null && v !== undefined && v !== ''))
+          await supabase.from('contacts').update(updates).eq('id', id)
+        }
+
         const matched = toInsert.filter(c => c.company_id).length
-        setUploadResult({ count: toInsert.length, type: `contacts${matched > 0 ? ` · ${matched} auto-linked to companies` : ''}` })
+        const notes = [
+          newContacts.length > 0 && `${newContacts.length} new added`,
+          updateContacts.length > 0 && `${updateContacts.length} updated`,
+          matched > 0 && `${matched} linked to companies`,
+        ].filter(Boolean).join(' · ')
+        setUploadResult({ count: toInsert.length, type: `contacts · ${notes}` })
       }
       setPreview([])
       setPreviewFile(null)
