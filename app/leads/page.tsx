@@ -38,6 +38,7 @@ export default function LeadsPage() {
   const [loading, setLoading] = useState(false)
   const [importingId, setImportingId] = useState<string | null>(null)
   const [imported, setImported] = useState<Set<string>>(new Set())
+  const [sources, setSources] = useState<string[]>([])
 
   const toggleTrigger = (id: string) => {
     setTriggers((prev) => prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id])
@@ -59,6 +60,7 @@ export default function LeadsPage() {
       const data = await res.json()
       if (data.error) throw new Error(data.error)
       setResults(data.leads || [])
+      if (data.sources_used) setSources(data.sources_used)
       if ((data.leads || []).length === 0) setError('No leads returned. Try a different industry or location.')
     } catch (err) {
       setError(String(err))
@@ -180,6 +182,16 @@ export default function LeadsPage() {
       {error && !loading && (
         <div className="flex items-start gap-2 text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm">
           <span className="font-medium">Error:</span> {error}
+        </div>
+      )}
+
+      {/* Sources used */}
+      {sources.length > 0 && !loading && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>Sources:</span>
+          {sources.map(s => (
+            <span key={s} className="px-2 py-0.5 rounded-full bg-muted border border-border font-medium">{s}</span>
+          ))}
         </div>
       )}
 
