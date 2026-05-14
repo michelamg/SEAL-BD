@@ -40,10 +40,17 @@ export default function ContactsPage() {
   const [search, setSearch] = useState('')
   const [csuite, setCsuite] = useState(false)
 
-  // Add individual
+  // Add / Edit
   const [addOpen, setAddOpen] = useState(false)
+  const [editContact, setEditContact] = useState<(Contact & { companies?: { name: string } | null }) | null>(null)
   const [form, setForm] = useState<Partial<Contact & { company_id: string }>>({})
   const [saving, setSaving] = useState(false)
+
+  const openEdit = (c: Contact & { companies?: { name: string } | null }) => {
+    setEditContact(c)
+    setForm({ ...c, company_id: (c as Record<string, unknown>).company_id as string || '' })
+    setAddOpen(true)
+  }
 
   // CSV upload
   const [uploading, setUploading] = useState(false)
@@ -69,9 +76,23 @@ export default function ContactsPage() {
   const saveContact = async () => {
     if (!form.first_name && !form.last_name) return
     setSaving(true)
-    await supabase.from('contacts').insert({ ...form, source: 'manual' })
+    if (editContact?.id) {
+      await supabase.from('contacts').update({ ...form, updated_at: new Date().toISOString() }).eq('id', editContact.id)
+    } else {
+      await supabase.from('contacts').insert({ ...form, source: 'manual' })
+    }
     setSaving(false)
     setAddOpen(false)
+    setEditContact(null)
+    setForm({})
+    fetchContacts()
+  }
+
+  const deleteContact = async () => {
+    if (!editContact?.id || !confirm('Delete this contact?')) return
+    await supabase.from('contacts').delete().eq('id', editContact.id)
+    setAddOpen(false)
+    setEditContact(null)
     setForm({})
     fetchContacts()
   }
@@ -122,7 +143,7 @@ export default function ContactsPage() {
             </div>
           </label>
           {/* Add individual */}
-          <Button size="sm" className="gap-1.5" onClick={() => setAddOpen(true)}>
+          <Button size="sm" className="gap-1.5" onClick={() => { setEditContact(null); setForm({}); setAddOpen(true) }}>
             <Plus className="w-4 h-4" /> Add Contact
           </Button>
         </div>
@@ -194,7 +215,7 @@ export default function ContactsPage() {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {contacts.map((c) => (
-                    <tr key={c.id} className="hover:bg-muted/20">
+                    <tr key={c.id} className="hover:bg-muted/20 cursor-pointer" onClick={() => openEdit(c)}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <p className="font-medium">{c.first_name} {c.last_name}</p>
@@ -235,7 +256,9 @@ export default function ContactsPage() {
       {/* Add Contact Dialog */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Add Contact</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>{editContact ? `${editContact.first_name} ${editContact.last_name}` : 'Add Contact'}</DialogTitle>
+          </DialogHeader>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div><Label>First Name *</Label><Input value={form.first_name || ''} onChange={(e) => set('first_name', e.target.value)} /></div>
@@ -259,12 +282,23 @@ export default function ContactsPage() {
               <input type="checkbox" id="csuite-add" checked={!!form.is_c_suite} onChange={(e) => set('is_c_suite', e.target.checked)} />
               <label htmlFor="csuite-add" className="text-sm">C-Suite / Decision Maker</label>
             </div>
+            {(form as Record<string, unknown>).notes !== undefined && (
+              <div>
+                <Label>Notes</Label>
+                <Input value={(form as Record<string, unknown>).notes as string || ''} onChange={(e) => set('notes' as keyof Contact, e.target.value)} />
+              </div>
+            )}
           </div>
-          <div className="flex justify-end gap-2 pt-2 border-t border-border">
-            <Button variant="outline" size="sm" onClick={() => setAddOpen(false)}>Cancel</Button>
-            <Button size="sm" onClick={saveContact} disabled={saving || (!form.first_name && !form.last_name)}>
-              {saving ? 'Saving…' : 'Add Contact'}
-            </Button>
+          <div className="flex items-center justify-between pt-2 border-t border-border">
+            {editContact ? (
+              <Button variant="destructive" size="sm" onClick={deleteContact}>Delete</Button>
+            ) : <span />}
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => { setAddOpen(false); setEditContact(null); setForm({}) }}>Cancel</Button>
+              <Button size="sm" onClick={saveContact} disabled={saving || (!form.first_name && !form.last_name)}>
+                {saving ? 'Saving…' : editContact ? 'Save Changes' : 'Add Contact'}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
