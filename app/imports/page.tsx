@@ -1,22 +1,58 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { PitchbookReport, PitchbookCompany } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Label } from '@/components/ui/label'
 import { UploadCloud, FileText, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 import { format } from 'date-fns'
+import * as XLSX from 'xlsx'
+
+// Parse any spreadsheet (CSV or Excel) into rows
+function parseSpreadsheet(file: File): Promise<Record<string, string>[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const data = e.target?.result
+        const wb = XLSX.read(data, { type: 'binary' })
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        const rows = XLSX.utils.sheet_to_json<Record<string, string>>(ws, { defval: '' })
+        resolve(rows)
+      } catch (err) { reject(err) }
+    }
+    reader.onerror = reject
+    reader.readAsBinaryString(file)
+  })
+}
+
+function getCol(row: Record<string, string>, ...keys: string[]) {
+  return keys.map(k => row[k]).find(v => v && String(v).trim()) || ''
+}
 
 export default function ImportsPage() {
   const [reports, setReports] = useState<PitchbookReport[]>([])
   const [selectedReport, setSelectedReport] = useState<string | null>(null)
   const [reportCompanies, setReportCompanies] = useState<PitchbookCompany[]>([])
   const [uploading, setUploading] = useState(false)
-  const [uploadResult, setUploadResult] = useState<{ count: number } | null>(null)
+  const [uploadResult, setUploadResult] = useState<{ count: number; type: string } | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
+
+  // General import state
+  const [importType, setImportType] = useState<'companies' | 'contacts'>('companies')
+  const [importCompanyId, setImportCompanyId] = useState('')
+  const [companies, setCompanies] = useState<{ id: string; name: string }[]>([])
+  const [preview, setPreview] = useState<Record<string, string>[]>([])
+  const [previewFile, setPreviewFile] = useState<File | null>(null)
+
+  const pbRef = useRef<HTMLInputElement>(null)
+  const compsRef = useRef<HTMLInputElement>(null)
+  const generalRef = useRef<HTMLInputElement>(null)
 
   const fetchReports = async () => {
     const { data } = await supabase.from('pitchbook_reports').select('*').order('created_at', { ascending: false })
@@ -24,7 +60,9 @@ export default function ImportsPage() {
   }
 
   useEffect(() => { fetchReports() }, [])
-
+  useEffect(() => {
+    supabase.from('companies').select('id, name').order('name').then(({ data }) => setCompanies(data || []))
+  }, [])
   useEffect(() => {
     if (selectedReport) {
       supabase.from('pitchbook_companies').select('*').eq('report_id', selectedReport).order('company_name')
@@ -32,159 +70,277 @@ export default function ImportsPage() {
     }
   }, [selectedReport])
 
+  const reset = () => { setUploadResult(null); setUploadError(null) }
+
+  // PitchBook upload
   const uploadPitchbook = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setUploading(true)
-    setUploadResult(null)
-    setUploadError(null)
+    const file = e.target.files?.[0]; if (!file) return
+    setUploading(true); reset()
     try {
-      const fd = new FormData()
-      fd.append('file', file)
+      const fd = new FormData(); fd.append('file', file)
       const res = await fetch('/api/imports/pitchbook', { method: 'POST', body: fd })
       const data = await res.json()
       if (data.error) throw new Error(data.error)
-      setUploadResult({ count: data.count })
+      setUploadResult({ count: data.count, type: 'PitchBook companies' })
       fetchReports()
-    } catch (err) {
-      setUploadError(String(err))
-    } finally {
-      setUploading(false)
-      e.target.value = ''
-    }
+    } catch (err) { setUploadError(String(err)) }
+    finally { setUploading(false); if (pbRef.current) pbRef.current.value = '' }
   }
 
+  // Lease comps upload
   const uploadComps = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setUploading(true)
-    setUploadResult(null)
-    setUploadError(null)
+    const file = e.target.files?.[0]; if (!file) return
+    setUploading(true); reset()
     try {
-      const fd = new FormData()
-      fd.append('file', file)
+      const fd = new FormData(); fd.append('file', file)
       const res = await fetch('/api/imports/comps', { method: 'POST', body: fd })
       const data = await res.json()
       if (data.error) throw new Error(data.error)
-      setUploadResult({ count: data.count })
-    } catch (err) {
-      setUploadError(String(err))
-    } finally {
-      setUploading(false)
-      e.target.value = ''
-    }
+      setUploadResult({ count: data.count, type: 'lease comps' })
+    } catch (err) { setUploadError(String(err)) }
+    finally { setUploading(false); if (compsRef.current) compsRef.current.value = '' }
+  }
+
+  // General import — preview
+  const handleGeneralPreview = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return
+    reset()
+    try {
+      const rows = await parseSpreadsheet(file)
+      setPreview(rows.slice(0, 5))
+      setPreviewFile(file)
+    } catch (err) { setUploadError(`Could not read file: ${err}`) }
+  }
+
+  // General import — confirm
+  const confirmImport = async () => {
+    if (!previewFile) return
+    setUploading(true); reset()
+    try {
+      const rows = await parseSpreadsheet(previewFile)
+      if (importType === 'companies') {
+        const toInsert = rows.map(row => ({
+          name: getCol(row, 'Company Name', 'Company', 'Name', 'Organization'),
+          website: getCol(row, 'Website', 'URL', 'Web'),
+          industry: getCol(row, 'Industry', 'Sector', 'Vertical'),
+          location: getCol(row, 'HQ Location', 'Location', 'City', 'HQ City/State/Country'),
+          size: getCol(row, 'Employees', 'Employee Count', 'Number of Employees', 'Size'),
+          description: getCol(row, 'Description', 'Business Description', 'Summary'),
+          trigger_signal: getCol(row, 'Last Financing Type', 'Last Deal Type', 'Funding', 'Trigger'),
+          track: 'A' as const,
+          stage: 'prospect' as const,
+          source: 'import',
+        })).filter(c => c.name && c.name.trim())
+        if (toInsert.length === 0) throw new Error('No company names found. Check your column headers.')
+        await supabase.from('companies').insert(toInsert)
+        setUploadResult({ count: toInsert.length, type: 'companies' })
+      } else {
+        const toInsert = rows.map(row => {
+          const fullName = getCol(row, 'Name', 'Full Name', 'Contact Name')
+          const [first, ...rest] = fullName.split(' ')
+          return {
+            first_name: getCol(row, 'First Name', 'First') || first || '',
+            last_name: getCol(row, 'Last Name', 'Last') || rest.join(' ') || '',
+            title: getCol(row, 'Title', 'Job Title', 'Position'),
+            email: getCol(row, 'Email', 'Email Address', 'Work Email'),
+            phone: getCol(row, 'Phone', 'Phone Number', 'Mobile'),
+            linkedin_url: getCol(row, 'LinkedIn', 'LinkedIn URL'),
+            company_id: importCompanyId || null,
+            source: 'import',
+          }
+        }).filter(c => c.first_name || c.last_name || c.email)
+        if (toInsert.length === 0) throw new Error('No contacts found. Check your column headers.')
+        await supabase.from('contacts').insert(toInsert)
+        setUploadResult({ count: toInsert.length, type: 'contacts' })
+      }
+      setPreview([])
+      setPreviewFile(null)
+      if (generalRef.current) generalRef.current.value = ''
+    } catch (err) { setUploadError(String(err)) }
+    finally { setUploading(false) }
   }
 
   const importCompany = async (pb: PitchbookCompany) => {
     await supabase.from('companies').insert({
-      name: pb.company_name,
-      website: pb.website,
-      industry: pb.industry,
-      location: pb.hq_location,
-      size: pb.employee_count,
-      trigger_signal: pb.last_funding_type
-        ? `${pb.last_funding_type} — ${pb.last_funding_amount || ''} (${pb.last_funding_date || ''})`
-        : undefined,
-      track: 'A',
-      stage: 'prospect',
-      source: 'pitchbook',
+      name: pb.company_name, website: pb.website, industry: pb.industry,
+      location: pb.hq_location, size: pb.employee_count,
+      trigger_signal: pb.last_funding_type ? `${pb.last_funding_type} — ${pb.last_funding_amount || ''} (${pb.last_funding_date || ''})` : undefined,
+      track: 'A', stage: 'prospect', source: 'pitchbook',
     })
-    await supabase.from('pitchbook_companies').update({ status: 'imported', matched_company_id: null }).eq('id', pb.id)
-    setReportCompanies((prev) => prev.map((p) => p.id === pb.id ? { ...p, status: 'imported' } : p))
+    await supabase.from('pitchbook_companies').update({ status: 'imported' }).eq('id', pb.id)
+    setReportCompanies(prev => prev.map(p => p.id === pb.id ? { ...p, status: 'imported' } : p))
   }
 
   const skipCompany = async (id: string) => {
     await supabase.from('pitchbook_companies').update({ status: 'skipped' }).eq('id', id)
-    setReportCompanies((prev) => prev.map((p) => p.id === id ? { ...p, status: 'skipped' } : p))
+    setReportCompanies(prev => prev.map(p => p.id === id ? { ...p, status: 'skipped' } : p))
   }
+
+  const UploadFeedback = () => (
+    <>
+      {uploadResult && (
+        <div className="flex items-center gap-2 text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm">
+          <CheckCircle className="w-4 h-4 shrink-0" />
+          <strong>{uploadResult.count}</strong> {uploadResult.type} imported successfully
+        </div>
+      )}
+      {uploadError && (
+        <div className="flex items-start gap-2 text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          {uploadError}
+        </div>
+      )}
+    </>
+  )
+
+  const DropZone = ({ label, hint, inputRef, onChange, accept = '.csv,.xlsx,.xls' }: {
+    label: string; hint: string
+    inputRef: React.RefObject<HTMLInputElement | null>
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+    accept?: string
+  }) => (
+    <label className="cursor-pointer block">
+      <input ref={inputRef} type="file" accept={accept} className="hidden" onChange={onChange} disabled={uploading} />
+      <div className="border-2 border-dashed border-border rounded-xl p-10 text-center hover:border-primary/40 hover:bg-muted/30 transition-colors">
+        <UploadCloud className="w-9 h-9 mx-auto text-muted-foreground mb-3" />
+        <p className="text-sm font-semibold mb-1">{label}</p>
+        <p className="text-xs text-muted-foreground mb-4">{hint}</p>
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium">
+          {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4" />}
+          {uploading ? 'Processing…' : 'Choose File'}
+        </div>
+        <p className="text-xs text-muted-foreground mt-3">Supports .csv, .xlsx, .xls</p>
+      </div>
+    </label>
+  )
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <div>
         <h1 className="text-2xl font-bold">Data Imports</h1>
-        <p className="text-muted-foreground text-sm mt-1">Upload PitchBook reports and lease comps</p>
+        <p className="text-muted-foreground text-sm mt-1">Upload spreadsheets to import leads, contacts, PitchBook reports, and lease comps</p>
       </div>
 
-      <Tabs defaultValue="pitchbook">
+      <UploadFeedback />
+
+      <Tabs defaultValue="general">
         <TabsList>
+          <TabsTrigger value="general">Import Leads / Contacts</TabsTrigger>
           <TabsTrigger value="pitchbook">PitchBook Reports</TabsTrigger>
           <TabsTrigger value="comps">Lease Comps</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="pitchbook" className="space-y-4 mt-4">
-          {/* Upload area */}
+        {/* ── GENERAL IMPORT ── */}
+        <TabsContent value="general" className="space-y-4 mt-4">
           <Card>
-            <CardContent className="p-6">
-              <div className="border-2 border-dashed border-border rounded-lg p-8 text-center">
-                <UploadCloud className="w-8 h-8 mx-auto text-muted-foreground mb-3" />
-                <p className="text-sm font-medium mb-1">Upload PitchBook CSV Export</p>
-                <p className="text-xs text-muted-foreground mb-4">
-                  Export from PitchBook → Companies → Save as CSV. Any standard export format works.
-                </p>
-                <label className="cursor-pointer">
-                  <input type="file" accept=".csv" className="hidden" onChange={uploadPitchbook} disabled={uploading} />
-                  <Button size="sm" disabled={uploading}>
-                    <>
-                      {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4" />}
-                      {uploading ? 'Processing…' : 'Choose CSV'}
-                    </>
-                  </Button>
-                </label>
-                {uploadResult && (
-                  <div className="flex items-center justify-center gap-2 mt-3 text-green-600 text-sm">
-                    <CheckCircle className="w-4 h-4" />
-                    {uploadResult.count} companies imported from report
+            <CardContent className="p-6 space-y-5">
+              <div className="flex gap-4 items-end">
+                <div>
+                  <Label>What are you importing?</Label>
+                  <div className="flex gap-2 mt-2">
+                    {(['companies', 'contacts'] as const).map(t => (
+                      <button key={t} onClick={() => setImportType(t)}
+                        className={`px-4 py-1.5 rounded-full text-sm border font-medium capitalize transition-colors ${importType === t ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground hover:border-primary/50'}`}>
+                        {t}
+                      </button>
+                    ))}
                   </div>
-                )}
-                {uploadError && (
-                  <div className="flex items-center justify-center gap-2 mt-3 text-red-500 text-sm">
-                    <AlertCircle className="w-4 h-4" />
-                    {uploadError}
+                </div>
+                {importType === 'contacts' && (
+                  <div>
+                    <Label>Assign to company (optional)</Label>
+                    <Select value={importCompanyId} onValueChange={(v) => v != null && setImportCompanyId(v)}>
+                      <SelectTrigger className="w-52 mt-1"><SelectValue placeholder="No company" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">No company</SelectItem>
+                        {companies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   </div>
                 )}
               </div>
+
+              <DropZone
+                label={importType === 'companies' ? 'Upload Companies / Leads Spreadsheet' : 'Upload Contacts Spreadsheet'}
+                hint={importType === 'companies'
+                  ? 'Any spreadsheet with company names. Columns: Company Name, Industry, Website, Location, Employees, Description.'
+                  : 'Any spreadsheet with contact names. Columns: First Name, Last Name, Title, Email, Phone, LinkedIn.'}
+                inputRef={generalRef}
+                onChange={handleGeneralPreview}
+              />
+
+              {/* Preview */}
+              {preview.length > 0 && (
+                <div className="space-y-3">
+                  <p className="text-sm font-medium">Preview — first {preview.length} rows:</p>
+                  <div className="overflow-auto border border-border rounded-lg max-h-48">
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-muted">
+                        <tr>{Object.keys(preview[0]).slice(0, 8).map(k => <th key={k} className="text-left px-3 py-2 font-medium">{k}</th>)}</tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {preview.map((row, i) => (
+                          <tr key={i}>{Object.values(row).slice(0, 8).map((v, j) => <td key={j} className="px-3 py-1.5 text-muted-foreground truncate max-w-32">{String(v)}</td>)}</tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Button onClick={confirmImport} disabled={uploading} className="gap-2">
+                      {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                      {uploading ? 'Importing…' : `Import ${importType}`}
+                    </Button>
+                    <Button variant="outline" onClick={() => { setPreview([]); setPreviewFile(null); if (generalRef.current) generalRef.current.value = '' }}>
+                      Cancel
+                    </Button>
+                    <p className="text-xs text-muted-foreground">Looks right? Click Import to add to CRM.</p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── PITCHBOOK ── */}
+        <TabsContent value="pitchbook" className="space-y-4 mt-4">
+          <Card>
+            <CardContent className="p-6">
+              <DropZone
+                label="Upload PitchBook CSV Export"
+                hint="Export from PitchBook → Companies → Save as CSV or Excel."
+                inputRef={pbRef}
+                onChange={uploadPitchbook}
+              />
             </CardContent>
           </Card>
 
-          {/* Report history */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div>
               <p className="text-sm font-medium mb-3">Upload History</p>
-              {reports.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No reports uploaded yet.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {reports.map((r) => (
-                    <li
-                      key={r.id}
-                      onClick={() => setSelectedReport(r.id)}
-                      className={`p-3 rounded-lg border cursor-pointer transition-colors ${selectedReport === r.id ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30'}`}
-                    >
-                      <div className="flex items-start gap-2">
-                        <FileText className="w-4 h-4 text-muted-foreground mt-0.5" />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium truncate">{r.filename}</p>
-                          <p className="text-xs text-muted-foreground">{r.record_count} records · {format(new Date(r.created_at), 'MMM d, yyyy')}</p>
+              {reports.length === 0
+                ? <p className="text-sm text-muted-foreground">No reports uploaded yet.</p>
+                : <ul className="space-y-2">
+                    {reports.map(r => (
+                      <li key={r.id} onClick={() => setSelectedReport(r.id)}
+                        className={`p-3 rounded-lg border cursor-pointer transition-colors ${selectedReport === r.id ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30'}`}>
+                        <div className="flex items-start gap-2">
+                          <FileText className="w-4 h-4 text-muted-foreground mt-0.5" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium truncate">{r.filename}</p>
+                            <p className="text-xs text-muted-foreground">{r.record_count} records · {format(new Date(r.created_at), 'MMM d, yyyy')}</p>
+                          </div>
                         </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
+                      </li>
+                    ))}
+                  </ul>
+              }
             </div>
-
             <div className="lg:col-span-2">
               {selectedReport && (
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <p className="text-sm font-medium">{reportCompanies.length} companies in this report</p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => reportCompanies.filter(c => c.status === 'new').forEach(importCompany)}
-                    >
-                      Import All New
-                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => reportCompanies.filter(c => c.status === 'new').forEach(importCompany)}>Import All New</Button>
                   </div>
                   <div className="overflow-auto max-h-96">
                     <table className="w-full text-xs">
@@ -198,28 +354,16 @@ export default function ImportsPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
-                        {reportCompanies.map((c) => (
+                        {reportCompanies.map(c => (
                           <tr key={c.id} className={c.status !== 'new' ? 'opacity-50' : ''}>
-                            <td className="px-3 py-2">
-                              <p className="font-medium">{c.company_name}</p>
-                              {c.ceo_name && <p className="text-muted-foreground">CEO: {c.ceo_name}</p>}
-                            </td>
+                            <td className="px-3 py-2"><p className="font-medium">{c.company_name}</p>{c.ceo_name && <p className="text-muted-foreground">CEO: {c.ceo_name}</p>}</td>
                             <td className="px-3 py-2 text-muted-foreground">{c.industry}</td>
-                            <td className="px-3 py-2">
-                              {c.last_funding_amount && <p>{c.last_funding_amount}</p>}
-                              {c.last_funding_type && <p className="text-muted-foreground">{c.last_funding_type}</p>}
-                            </td>
+                            <td className="px-3 py-2">{c.last_funding_amount && <p>{c.last_funding_amount}</p>}{c.last_funding_type && <p className="text-muted-foreground">{c.last_funding_type}</p>}</td>
                             <td className="px-3 py-2 text-muted-foreground">{c.hq_location}</td>
                             <td className="px-3 py-2">
-                              {c.status === 'new' && (
-                                <div className="flex gap-1">
-                                  <Button size="sm" className="h-6 text-[10px] px-2" onClick={() => importCompany(c)}>Import</Button>
-                                  <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2" onClick={() => skipCompany(c.id)}>Skip</Button>
-                                </div>
-                              )}
-                              {c.status !== 'new' && (
-                                <Badge variant="outline" className="text-[10px] capitalize">{c.status}</Badge>
-                              )}
+                              {c.status === 'new'
+                                ? <div className="flex gap-1"><Button size="sm" className="h-6 text-[10px] px-2" onClick={() => importCompany(c)}>Import</Button><Button variant="ghost" size="sm" className="h-6 text-[10px] px-2" onClick={() => skipCompany(c.id)}>Skip</Button></div>
+                                : <Badge variant="outline" className="text-[10px] capitalize">{c.status}</Badge>}
                             </td>
                           </tr>
                         ))}
@@ -232,37 +376,16 @@ export default function ImportsPage() {
           </div>
         </TabsContent>
 
+        {/* ── COMPS ── */}
         <TabsContent value="comps" className="mt-4">
           <Card>
             <CardContent className="p-6">
-              <div className="border-2 border-dashed border-border rounded-lg p-8 text-center">
-                <UploadCloud className="w-8 h-8 mx-auto text-muted-foreground mb-3" />
-                <p className="text-sm font-medium mb-1">Upload Lease Comps CSV</p>
-                <p className="text-xs text-muted-foreground mb-4">
-                  Export from CoStar or any source. Columns: Tenant, Address, City, State, SF, Rate, Term, Lease Type, Date.
-                </p>
-                <label className="cursor-pointer">
-                  <input type="file" accept=".csv" className="hidden" onChange={uploadComps} disabled={uploading} />
-                  <Button size="sm" disabled={uploading}>
-                    <>
-                      {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4" />}
-                      {uploading ? 'Processing…' : 'Choose CSV'}
-                    </>
-                  </Button>
-                </label>
-                {uploadResult && (
-                  <div className="flex items-center justify-center gap-2 mt-3 text-green-600 text-sm">
-                    <CheckCircle className="w-4 h-4" />
-                    {uploadResult.count} comps imported
-                  </div>
-                )}
-                {uploadError && (
-                  <div className="flex items-center justify-center gap-2 mt-3 text-red-500 text-sm">
-                    <AlertCircle className="w-4 h-4" />
-                    {uploadError}
-                  </div>
-                )}
-              </div>
+              <DropZone
+                label="Upload Lease Comps"
+                hint="Export from CoStar or any source. Columns: Tenant, Address, City, State, SF, Rate, Term, Lease Type, Date."
+                inputRef={compsRef}
+                onChange={uploadComps}
+              />
             </CardContent>
           </Card>
           <LeaseCompsTable />
@@ -273,15 +396,11 @@ export default function ImportsPage() {
 }
 
 function LeaseCompsTable() {
-  const [comps, setComps] = useState<{ id: string; tenant_name?: string; address?: string; city?: string; state?: string; size_sf?: number; rate_per_sf?: number; lease_type?: string; deal_date?: string; vertical?: string }[]>([])
-
+  const [comps, setComps] = useState<{ id: string; tenant_name?: string; city?: string; state?: string; size_sf?: number; rate_per_sf?: number; lease_type?: string; deal_date?: string }[]>([])
   useEffect(() => {
-    supabase.from('lease_comps').select('*').order('created_at', { ascending: false }).limit(100)
-      .then(({ data }) => setComps(data || []))
+    supabase.from('lease_comps').select('*').order('created_at', { ascending: false }).limit(100).then(({ data }) => setComps(data || []))
   }, [])
-
   if (comps.length === 0) return null
-
   return (
     <div className="mt-6">
       <p className="text-sm font-medium mb-3">{comps.length} lease comps in database</p>
@@ -298,7 +417,7 @@ function LeaseCompsTable() {
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {comps.map((c) => (
+            {comps.map(c => (
               <tr key={c.id}>
                 <td className="px-3 py-2 font-medium">{c.tenant_name}</td>
                 <td className="px-3 py-2 text-muted-foreground">{c.city}{c.state ? `, ${c.state}` : ''}</td>
