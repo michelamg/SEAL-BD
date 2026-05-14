@@ -16,25 +16,42 @@ import * as XLSX from 'xlsx'
 // Detect row color from Excel cell fill → returns 'red' | 'green' | 'yellow' | null
 function detectRowColor(ws: XLSX.WorkSheet, rowIndex: number): 'red' | 'green' | 'yellow' | null {
   const range = XLSX.utils.decode_range(ws['!ref'] || 'A1')
-  // Check first few cells in the row for a fill color
-  for (let col = range.s.c; col <= Math.min(range.s.c + 5, range.e.c); col++) {
+
+  for (let col = range.s.c; col <= Math.min(range.s.c + 8, range.e.c); col++) {
     const addr = XLSX.utils.encode_cell({ r: rowIndex, c: col })
     const cell = ws[addr]
-    if (!cell?.s?.fill) continue
-    const fill = cell.s.fill
-    const rgb: string = fill.fgColor?.rgb || fill.bgColor?.rgb || ''
-    if (!rgb || rgb === 'FFFFFF' || rgb === 'FF000000' || rgb.length < 6) continue
-    // ARGB format: last 6 chars are RRGGBB
-    const hex = rgb.slice(-6).toUpperCase()
+    if (!cell?.s) continue
+
+    // Try multiple fill sources
+    const fill = cell.s.fill || cell.s.bgColor || cell.s.fgColor
+    if (!fill) continue
+
+    const rawRgb: string =
+      cell.s.fill?.fgColor?.rgb ||
+      cell.s.fill?.bgColor?.rgb ||
+      cell.s.fgColor?.rgb ||
+      cell.s.bgColor?.rgb ||
+      ''
+
+    if (!rawRgb || rawRgb.length < 6) continue
+
+    // Handle both 6-char RGB and 8-char ARGB (Excel uses ARGB)
+    // Skip transparent / white / black defaults
+    const skip = ['FFFFFF', 'FF000000', '000000', 'FFFFFFFF', '00000000']
+    if (skip.some(s => rawRgb.toUpperCase().endsWith(s.slice(-6)))) continue
+
+    // Always use last 6 chars as RRGGBB
+    const hex = rawRgb.slice(-6).toUpperCase()
     const r = parseInt(hex.slice(0, 2), 16)
     const g = parseInt(hex.slice(2, 4), 16)
     const b = parseInt(hex.slice(4, 6), 16)
-    // Red: high R, low G+B
-    if (r > 180 && g < 100 && b < 100) return 'red'
-    // Green: high G, low R+B
-    if (g > 150 && r < 150 && b < 100) return 'green'
-    // Yellow/Orange: high R+G, low B
-    if (r > 180 && g > 130 && b < 100) return 'yellow'
+
+    // Common Excel green fills: #92D050, #00B050, #70AD47
+    if (g > r && g > b && g > 100) return 'green'
+    // Common Excel red fills: #FF0000, #FF6666, #FF4444, #C00000
+    if (r > 150 && r > g * 1.5 && r > b * 1.5) return 'red'
+    // Common Excel yellow/orange fills: #FFFF00, #FFC000, #FFEB9C, #FF9900
+    if (r > 180 && g > 100 && b < 100) return 'yellow'
   }
   return null
 }
@@ -173,7 +190,13 @@ export default function ImportsPage() {
           const color = detectRowColor(ws, rowIndex)
           if (color === 'red') return null // skip red rows
 
-          const priority = color === 'green' ? 'high' : color === 'yellow' ? 'medium' : 'medium'
+          // Also check explicit Priority column as fallback
+          const priorityCol = getCol(row, 'Priority', 'Importance', 'Rank').toLowerCase()
+          const priority = priorityCol === 'high' ? 'high'
+            : priorityCol === 'low' ? 'low'
+            : color === 'green' ? 'high'
+            : color === 'yellow' ? 'medium'
+            : 'medium'
 
           return {
             name: getCol(row, 'Tenant/Company', 'Tenant', 'Company Name', 'Company', 'Tenant Name', 'Name', 'Organization', 'Account', 'Client'),
