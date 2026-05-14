@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ContactsTab } from './contacts-tab'
 import { OutreachTab } from './outreach-tab'
+import { IdeasTab } from './ideas-tab'
 
 const VERTICALS = ['NIC', 'Tech', 'Life Sci', 'Defense', 'Pro Services', 'Other']
 const STAGES = ['prospect', 'qualifying', 'active', 'nurturing', 'won', 'lost', 'disqualified']
@@ -65,6 +66,7 @@ export function CompanyDialog({ open, onOpenChange, company, onSaved }: Props) {
             <TabsTrigger value="details">Details</TabsTrigger>
             <TabsTrigger value="contacts" disabled={!company?.id}>Contacts</TabsTrigger>
             <TabsTrigger value="outreach" disabled={!company?.id}>Outreach</TabsTrigger>
+            <TabsTrigger value="ideas" disabled={!company?.id}>Ideas</TabsTrigger>
           </TabsList>
 
           <TabsContent value="details" className="space-y-4">
@@ -192,6 +194,12 @@ export function CompanyDialog({ open, onOpenChange, company, onSaved }: Props) {
           {company?.id && (
             <TabsContent value="outreach">
               <OutreachTab companyId={company.id} />
+            </TabsContent>
+          )}
+
+          {company?.id && (
+            <TabsContent value="ideas">
+              <IdeasTab company={company} />
             </TabsContent>
           )}
         </Tabs>
