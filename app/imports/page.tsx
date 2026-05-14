@@ -13,45 +13,58 @@ import { UploadCloud, FileText, CheckCircle, AlertCircle, Loader2 } from 'lucide
 import { format } from 'date-fns'
 import * as XLSX from 'xlsx'
 
-// Detect row color from Excel cell fill → returns 'red' | 'green' | 'yellow' | null
+function classifyRgb(rawRgb: string): 'red' | 'green' | 'yellow' | null {
+  if (!rawRgb || rawRgb.length < 6) return null
+  const skip = ['FFFFFF', 'FF000000', '000000', 'FFFFFFFF', '00000000', 'FFFFFFF']
+  if (skip.some(s => rawRgb.toUpperCase().endsWith(s.slice(-6)))) return null
+
+  const hex = rawRgb.slice(-6).toUpperCase()
+  const r = parseInt(hex.slice(0, 2), 16)
+  const g = parseInt(hex.slice(2, 4), 16)
+  const b = parseInt(hex.slice(4, 6), 16)
+
+  // Any shade of green: G is dominant channel
+  if (g > r && g > b && g > 80) return 'green'
+  // Red: R is dominant, significantly higher than others
+  if (r > 150 && r > g * 1.4 && r > b * 1.4) return 'red'
+  // Yellow/Orange: R+G high, B low
+  if (r > 150 && g > 100 && b < 120 && r >= g * 0.7) return 'yellow'
+  return null
+}
+
+// Detect row color from Excel cell fill → checks cells AND row-level styles
 function detectRowColor(ws: XLSX.WorkSheet, rowIndex: number): 'red' | 'green' | 'yellow' | null {
   const range = XLSX.utils.decode_range(ws['!ref'] || 'A1')
 
-  for (let col = range.s.c; col <= Math.min(range.s.c + 8, range.e.c); col++) {
+  // Check row-level style first (whole-row formatting)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rowMeta = (ws['!rows'] as any)?.[rowIndex]
+  if (rowMeta?.s?.fill) {
+    const rgb = rowMeta.s.fill.fgColor?.rgb || rowMeta.s.fill.bgColor?.rgb || ''
+    const c = classifyRgb(rgb)
+    if (c) return c
+  }
+
+  // Check individual cells across the full row
+  for (let col = range.s.c; col <= range.e.c; col++) {
     const addr = XLSX.utils.encode_cell({ r: rowIndex, c: col })
     const cell = ws[addr]
-    if (!cell?.s) continue
+    if (!cell) continue
 
-    // Try multiple fill sources
-    const fill = cell.s.fill || cell.s.bgColor || cell.s.fgColor
-    if (!fill) continue
+    // Try all possible color locations Excel uses
+    const rgbCandidates = [
+      cell.s?.fill?.fgColor?.rgb,
+      cell.s?.fill?.bgColor?.rgb,
+      cell.s?.fgColor?.rgb,
+      cell.s?.bgColor?.rgb,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (cell.s as any)?.patternFill?.fgColor?.rgb,
+    ].filter(Boolean) as string[]
 
-    const rawRgb: string =
-      cell.s.fill?.fgColor?.rgb ||
-      cell.s.fill?.bgColor?.rgb ||
-      cell.s.fgColor?.rgb ||
-      cell.s.bgColor?.rgb ||
-      ''
-
-    if (!rawRgb || rawRgb.length < 6) continue
-
-    // Handle both 6-char RGB and 8-char ARGB (Excel uses ARGB)
-    // Skip transparent / white / black defaults
-    const skip = ['FFFFFF', 'FF000000', '000000', 'FFFFFFFF', '00000000']
-    if (skip.some(s => rawRgb.toUpperCase().endsWith(s.slice(-6)))) continue
-
-    // Always use last 6 chars as RRGGBB
-    const hex = rawRgb.slice(-6).toUpperCase()
-    const r = parseInt(hex.slice(0, 2), 16)
-    const g = parseInt(hex.slice(2, 4), 16)
-    const b = parseInt(hex.slice(4, 6), 16)
-
-    // Common Excel green fills: #92D050, #00B050, #70AD47
-    if (g > r && g > b && g > 100) return 'green'
-    // Common Excel red fills: #FF0000, #FF6666, #FF4444, #C00000
-    if (r > 150 && r > g * 1.5 && r > b * 1.5) return 'red'
-    // Common Excel yellow/orange fills: #FFFF00, #FFC000, #FFEB9C, #FF9900
-    if (r > 180 && g > 100 && b < 100) return 'yellow'
+    for (const rgb of rgbCandidates) {
+      const c = classifyRgb(rgb)
+      if (c) return c
+    }
   }
   return null
 }
@@ -63,7 +76,7 @@ function parseSpreadsheetWithColors(file: File): Promise<{ rows: Record<string, 
     reader.onload = (e) => {
       try {
         const data = e.target?.result
-        const wb = XLSX.read(data, { type: 'binary', cellStyles: true })
+        const wb = XLSX.read(data, { type: 'binary', cellStyles: true, sheetStubs: true })
         const ws = wb.Sheets[wb.SheetNames[0]]
         const rows = XLSX.utils.sheet_to_json<Record<string, string>>(ws, { defval: '' })
         const range = XLSX.utils.decode_range(ws['!ref'] || 'A1')
