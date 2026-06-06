@@ -1,22 +1,34 @@
 export const maxDuration = 60
 
 import { openai } from '@/lib/openai'
-import { createClient } from '@/lib/supabase/server'
+import { z } from 'zod'
+import { requireUser } from '@/lib/api/auth'
+import { rateLimit } from '@/lib/api/rate-limit'
+import { parseJson } from '@/lib/api/validate'
+import { Errors } from '@/lib/api/responses'
+import { captureError } from '@/lib/logger'
+
+const Schema = z.object({
+  listingName: z.string().optional(),
+  location: z.string().optional(),
+  verticals: z.array(z.string()).optional(),
+  sizeSf: z.number().optional(),
+})
 
 export async function POST(request: Request) {
-  const { data: { user } } = await (await createClient()).auth.getUser()
-  if (!user) return Response.json({ error: 'Not authenticated' }, { status: 401 })
+  const auth = await requireUser()
+  if ('error' in auth) return auth.error
+  const { user } = auth
 
-  let body
+  const rl = rateLimit(`listings-discover:${user.id}`, { limit: 20, windowMs: 60_000 })
+  if (!rl.ok) return Errors.rateLimited(rl.retryAfterSec)
+
+  const parsed = await parseJson(request, Schema)
+  if ('error' in parsed) return parsed.error
+  const { listingName, location, verticals, sizeSf } = parsed.data
+
   try {
-    body = await request.json()
-  } catch (err) {
-    console.error(err)
-    return Response.json({ error: 'Invalid request body' }, { status: 400 })
-  }
-  const { listingName, location, verticals, sizeSf } = body
-
-  const prompt = `You are a commercial real estate analyst for Cushman & Wakefield.
+    const prompt = `You are a commercial real estate analyst for Cushman & Wakefield.
 
 Find 8 companies that are realistic prospects for this commercial property:
 - Property: ${listingName}
@@ -39,19 +51,17 @@ Return JSON array: [{
   "reason": "why this company is a fit and signal of need"
 }]`
 
-  const response = await openai.chat.completions.create({
-    model: 'gpt-4o',
-    messages: [{ role: 'user', content: prompt }],
-    response_format: { type: 'json_object' },
-    temperature: 0.8,
-  })
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+      temperature: 0.8,
+    })
 
-  let data
-  try {
-    data = JSON.parse(response.choices[0].message.content || '{"prospects":[]}')
+    const data = JSON.parse(response.choices[0].message.content || '{"prospects":[]}')
+    return Response.json({ prospects: data.prospects || data })
   } catch (err) {
-    console.error(err)
-    return Response.json({ error: 'Generation failed' }, { status: 500 })
+    captureError(err, { route: 'listings/discover' })
+    return Errors.internal()
   }
-  return Response.json({ prospects: data.prospects || data })
 }

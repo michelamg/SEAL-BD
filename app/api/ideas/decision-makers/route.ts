@@ -1,15 +1,33 @@
 import { openai } from '@/lib/openai'
 import { searchPeople, formatApolloContact } from '@/lib/apollo'
-import { createClient } from '@/lib/supabase/server'
+import { z } from 'zod'
+import { requireUser } from '@/lib/api/auth'
+import { rateLimit } from '@/lib/api/rate-limit'
+import { parseJson } from '@/lib/api/validate'
+import { Errors } from '@/lib/api/responses'
+import { captureError } from '@/lib/logger'
 
 export const maxDuration = 60
 
+const DecisionMakersSchema = z.object({
+  companyName: z.string().optional(),
+  industry: z.string().optional(),
+  location: z.string().optional(),
+})
+
 export async function POST(request: Request) {
-  const { data: { user } } = await (await createClient()).auth.getUser()
-  if (!user) return Response.json({ error: 'Not authenticated' }, { status: 401 })
+  const auth = await requireUser()
+  if ('error' in auth) return auth.error
+  const { user } = auth
+
+  const rl = rateLimit(`ideas-dm:${user.id}`, { limit: 20, windowMs: 60_000 })
+  if (!rl.ok) return Errors.rateLimited(rl.retryAfterSec)
+
+  const parsed = await parseJson(request, DecisionMakersSchema)
+  if ('error' in parsed) return parsed.error
+  const { companyName, industry, location } = parsed.data
 
   try {
-    const { companyName, industry, location } = await request.json()
 
     let contacts: ReturnType<typeof formatApolloContact>[] = []
 
@@ -74,7 +92,7 @@ Use realistic titles specific to this type of company. Focus on: CFO, VP Real Es
 
     return Response.json({ contacts })
   } catch (err) {
-    console.error('Decision makers error:', err)
-    return Response.json({ error: 'Request failed', contacts: [] }, { status: 500 })
+    captureError(err, { route: 'ideas-decision-makers' })
+    return Errors.internal()
   }
 }

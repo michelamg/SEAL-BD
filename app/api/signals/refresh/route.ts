@@ -1,27 +1,32 @@
-import { createClient } from '@/lib/supabase/server'
 import { gatherSignals } from '@/lib/sources'
 import { recordAudit } from '@/lib/audit-log'
+import { requireUser } from '@/lib/api/auth'
+import { rateLimit } from '@/lib/api/rate-limit'
+import { parseJson } from '@/lib/api/validate'
+import { Errors } from '@/lib/api/responses'
+import { captureError } from '@/lib/logger'
+import { z } from 'zod'
 
 export const maxDuration = 60
+
+const Schema = z.object({ companyId: z.string().min(1) })
 
 // POST /api/signals/refresh  { companyId }
 // Runs every enabled source connector for the company, corroborates across them,
 // and persists any new signals into lead_signals (de-duped). Does not re-score —
 // the caller can follow with /api/audit.
 export async function POST(request: Request) {
-  const supabase = await createClient()
-  const { data: userData } = await supabase.auth.getUser()
-  const user = userData.user
-  if (!user) return Response.json({ error: 'Not authenticated' }, { status: 401 })
-
-  let body: { companyId?: string }
   try {
-    body = await request.json()
-  } catch {
-    return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
-  }
-  const companyId = body.companyId
-  if (!companyId) return Response.json({ error: 'companyId is required' }, { status: 400 })
+    const auth = await requireUser()
+    if ('error' in auth) return auth.error
+    const { user, supabase } = auth
+
+    const rl = rateLimit(`signals:${user.id}`, { limit: 20, windowMs: 60_000 })
+    if (!rl.ok) return Errors.rateLimited(rl.retryAfterSec)
+
+    const parsed = await parseJson(request, Schema)
+    if ('error' in parsed) return parsed.error
+    const { companyId } = parsed.data
 
   const { data: company, error: cErr } = await supabase
     .from('companies')
@@ -70,5 +75,9 @@ export async function POST(request: Request) {
     })
   }
 
-  return Response.json({ added: fresh.length, total: gathered.length, signals: gathered })
+    return Response.json({ added: fresh.length, total: gathered.length, signals: gathered })
+  } catch (err) {
+    captureError(err, { route: 'signals/refresh' })
+    return Errors.internal()
+  }
 }

@@ -1,25 +1,39 @@
 export const maxDuration = 60
 
 import { generateOutreachEmail } from '@/lib/openai'
-import { createClient } from '@/lib/supabase/server'
+import { z } from 'zod'
+import { requireUser } from '@/lib/api/auth'
+import { rateLimit } from '@/lib/api/rate-limit'
+import { parseJson } from '@/lib/api/validate'
+import { Errors } from '@/lib/api/responses'
+import { captureError } from '@/lib/logger'
+
+const Schema = z.object({
+  companyName: z.string(),
+  vertical: z.string(),
+  triggerSignal: z.string(),
+  location: z.string(),
+  recipientName: z.string().optional(),
+  recipientTitle: z.string().optional(),
+  listingName: z.string().optional(),
+})
 
 export async function POST(request: Request) {
-  const { data: { user } } = await (await createClient()).auth.getUser()
-  if (!user) return Response.json({ error: 'Not authenticated' }, { status: 401 })
+  const auth = await requireUser()
+  if ('error' in auth) return auth.error
+  const { user } = auth
 
-  let body
-  try {
-    body = await request.json()
-  } catch (err) {
-    console.error(err)
-    return Response.json({ error: 'Invalid request body' }, { status: 400 })
-  }
+  const rl = rateLimit(`outreach-gen:${user.id}`, { limit: 20, windowMs: 60_000 })
+  if (!rl.ok) return Errors.rateLimited(rl.retryAfterSec)
+
+  const parsed = await parseJson(request, Schema)
+  if ('error' in parsed) return parsed.error
 
   try {
-    const result = await generateOutreachEmail(body)
+    const result = await generateOutreachEmail(parsed.data)
     return Response.json(result)
   } catch (err) {
-    console.error(err)
-    return Response.json({ error: 'Request failed' }, { status: 500 })
+    captureError(err, { route: 'outreach/generate' })
+    return Errors.internal()
   }
 }

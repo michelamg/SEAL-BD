@@ -1,19 +1,30 @@
 import { openai } from '@/lib/openai'
-import { createClient } from '@/lib/supabase/server'
+import { z } from 'zod'
+import { requireUser } from '@/lib/api/auth'
+import { rateLimit } from '@/lib/api/rate-limit'
+import { parseJson } from '@/lib/api/validate'
+import { Errors } from '@/lib/api/responses'
+import { captureError } from '@/lib/logger'
 
 export const maxDuration = 60
 
+const GenerateSchema = z.object({
+  prompt: z.string().min(1).max(4000),
+})
+
 export async function POST(request: Request) {
-  const { data: { user } } = await (await createClient()).auth.getUser()
-  if (!user) return Response.json({ error: 'Not authenticated' }, { status: 401 })
+  const auth = await requireUser()
+  if ('error' in auth) return auth.error
+  const { user } = auth
+
+  const rl = rateLimit(`ideas-gen:${user.id}`, { limit: 20, windowMs: 60_000 })
+  if (!rl.ok) return Errors.rateLimited(rl.retryAfterSec)
+
+  const parsed = await parseJson(request, GenerateSchema)
+  if ('error' in parsed) return parsed.error
+  const { prompt } = parsed.data
 
   try {
-    const { prompt } = await request.json()
-
-    if (typeof prompt !== 'string' || prompt.length > 4000) {
-      return Response.json({ error: 'Invalid prompt', result: '' }, { status: 400 })
-    }
-
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [{ role: 'user', content: prompt }],
@@ -22,20 +33,20 @@ export async function POST(request: Request) {
     })
 
     const raw = response.choices[0].message.content || '{}'
-    const parsed = JSON.parse(raw)
+    const parsedResult = JSON.parse(raw)
 
     // If it's an email with subject+body, return formatted
-    if (parsed.subject && parsed.body) {
+    if (parsedResult.subject && parsedResult.body) {
       return Response.json({
-        result: `Subject: ${parsed.subject}\n\n${parsed.body}`,
-        subject: parsed.subject,
-        body: parsed.body,
+        result: `Subject: ${parsedResult.subject}\n\n${parsedResult.body}`,
+        subject: parsedResult.subject,
+        body: parsedResult.body,
       })
     }
 
     return Response.json({ result: raw })
   } catch (err) {
-    console.error('Ideas generate error:', err)
-    return Response.json({ error: 'Request failed', result: '' }, { status: 500 })
+    captureError(err, { route: 'ideas-generate' })
+    return Errors.internal()
   }
 }

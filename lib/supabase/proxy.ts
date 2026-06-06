@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 // Paths reachable without a session. Everything else requires login.
-const PUBLIC_PREFIXES = ['/login', '/auth']
+const PUBLIC_PREFIXES = ['/login', '/auth', '/api/health']
 
 // Refreshes the Supabase session on every request and gates protected routes.
 // Called from the root proxy.ts (Next 16 renamed middleware -> proxy).

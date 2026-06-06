@@ -1,29 +1,34 @@
-import { createClient } from '@/lib/supabase/server'
 import { openai } from '@/lib/openai'
 import { scoreLead, type CompanyInput, type SignalInput, type Scorecard } from '@/lib/scoring'
 import { inferSignalType } from '@/lib/signals'
 import { recordAudit } from '@/lib/audit-log'
+import { requireUser } from '@/lib/api/auth'
+import { rateLimit } from '@/lib/api/rate-limit'
+import { parseJson } from '@/lib/api/validate'
+import { Errors } from '@/lib/api/responses'
+import { captureError } from '@/lib/logger'
+import { z } from 'zod'
 
 export const maxDuration = 60
+
+const Schema = z.object({ companyId: z.string().min(1) })
 
 // POST /api/audit  { companyId }
 // Runs the deterministic scorecard for a company, generates a verified-signals-
 // only narrative, persists the audit + timeline event, and updates the company's
 // lease-clock/score. Requires an authenticated session (RLS attributes the writes).
 export async function POST(request: Request) {
-  const supabase = await createClient()
-  const { data: userData } = await supabase.auth.getUser()
-  const user = userData.user
-  if (!user) return Response.json({ error: 'Not authenticated' }, { status: 401 })
-
-  let body: { companyId?: string }
   try {
-    body = await request.json()
-  } catch {
-    return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
-  }
-  const companyId = body.companyId
-  if (!companyId) return Response.json({ error: 'companyId is required' }, { status: 400 })
+    const auth = await requireUser()
+    if ('error' in auth) return auth.error
+    const { user, supabase } = auth
+
+    const rl = rateLimit(`audit:${user.id}`, { limit: 20, windowMs: 60_000 })
+    if (!rl.ok) return Errors.rateLimited(rl.retryAfterSec)
+
+    const parsed = await parseJson(request, Schema)
+    if ('error' in parsed) return parsed.error
+    const { companyId } = parsed.data
 
   // ── Load the company + its contacts (RLS: shared team) ──
   const { data: company, error: cErr } = await supabase
@@ -101,7 +106,7 @@ export async function POST(request: Request) {
   // If the audit itself didn't persist, fail loudly rather than returning a
   // success with no auditId while still mutating the company/timeline.
   if (auditErr || !audit) {
-    return Response.json({ error: auditErr?.message ?? 'Failed to persist audit' }, { status: 500 })
+    return Errors.internal()
   }
 
   const prevScore: number | null = company.current_score ?? null
@@ -126,7 +131,11 @@ export async function POST(request: Request) {
     metadata: { score: card.score, band: card.band },
   })
 
-  return Response.json({ auditId: audit?.id, scorecard: card, narrative, signals })
+    return Response.json({ auditId: audit?.id, scorecard: card, narrative, signals })
+  } catch (err) {
+    captureError(err, { route: 'audit' })
+    return Errors.internal()
+  }
 }
 
 async function buildNarrative(

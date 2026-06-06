@@ -162,6 +162,15 @@ Verification gates: `npm run typecheck` (clean), `npm test` (47 passing), `npm r
 - **Dead fabricator removed:** deleted unused `generateLeads()` from `lib/openai.ts` (it prompted the model to invent companies/funding — the exact trust-boundary bug killed in `/api/leads`).
 - **Lib integrations hardened:** AbortController timeouts on Apollo/SERP/ZoomInfo/OpenAI; ZoomInfo token made single-flight + jwt-validated + 401-invalidating; SERP failures now logged; CSV parser bounded (`to_line`), numeric cells sanitized (`'12,500'`→12500), and formula-injection neutralized before storage.
 
+**Enterprise-grade pass (2026-06-06, agent teams) — typecheck + 58 tests + build clean, 0 lint errors:**
+- **Shared API layer** (`lib/api/`): `requireUser()`/`requireAdmin()` auth guards, `parseJson()` Zod body validation, fixed-window `rateLimit()` (in-memory, Redis-swappable), uniform `Errors`/`jsonError` responses. **All 13 API routes** standardized onto it — per-user rate limits (20/min paid, 10/min export+import), Zod-validated input, central `captureError` logging, no raw-error leakage. Response shapes preserved.
+- **Env validation** (`lib/env.ts`, Zod) — fail-fast in prod, warn in dev; `requireServerEnv()` for secrets. **Structured logging** (`lib/logger.ts`) with a vendor-neutral `captureError` choke point (wire Sentry later in one place).
+- **Security headers** (`next.config.ts`): HSTS, X-Frame-Options DENY, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, CSP (Report-Only first — promote to enforcing per DEPLOYMENT.md). `poweredByHeader: false`.
+- **Resilience**: `app/error.tsx`, `app/global-error.tsx`, `app/not-found.tsx`; `/api/health` liveness+readiness probe (public via proxy).
+- **CI/CD**: CI now runs typecheck + lint (hard gate) + 58 tests + build + `npm audit`; added CodeQL, Dependabot (npm + actions), gitleaks secret scan, and husky + lint-staged pre-commit.
+- **Docs**: README, SECURITY.md, ARCHITECTURE.md, DEPLOYMENT.md (provisioning runbook), `.env.example`, `docs/rls-verification.md` (manual RLS test plan for when keys land).
+- **Activates on C&W provisioning** (wired, not buildable without their accounts): SSO/SAML via Supabase, real error-monitoring backend behind `captureError`, Redis-backed rate limiting, DB backups/DR — each documented in DEPLOYMENT.md as a config step.
+
 **Next (needs Neil's 3 cloud dev Supabase keys → `.env.local`):**
 1. Apply `supabase/schema.sql` then `supabase/rls.sql` to the dev project.
 2. Create a test user; promote to admin (`UPDATE profiles SET role='admin' …`); sign in for real; confirm RLS lets the team see the shared pipeline.

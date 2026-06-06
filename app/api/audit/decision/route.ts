@@ -1,7 +1,19 @@
-import { createClient } from '@/lib/supabase/server'
 import { recordAudit } from '@/lib/audit-log'
+import { requireUser } from '@/lib/api/auth'
+import { rateLimit } from '@/lib/api/rate-limit'
+import { parseJson } from '@/lib/api/validate'
+import { Errors, jsonError } from '@/lib/api/responses'
+import { captureError } from '@/lib/logger'
+import { z } from 'zod'
 
 type Decision = 'approved' | 'deferred' | 'disqualified'
+
+const Schema = z.object({
+  companyId: z.string().min(1),
+  auditId: z.string().optional(),
+  decision: z.enum(['approved', 'deferred', 'disqualified']),
+  reason: z.string().optional(),
+})
 
 // Disqualify and defer are *states*, never deletions (D8). Each maps to a CRM
 // stage; the company row and its full history are always retained.
@@ -15,32 +27,25 @@ const STAGE_FOR: Record<Decision, string> = {
 // Records a triage decision against the latest (or specified) audit, advances the
 // company stage, and writes a timeline + audit-log entry. Nothing is deleted.
 export async function POST(request: Request) {
-  const supabase = await createClient()
-  const { data: userData } = await supabase.auth.getUser()
-  const user = userData.user
-  if (!user) return Response.json({ error: 'Not authenticated' }, { status: 401 })
-
-  let body: { companyId?: string; auditId?: string; decision?: Decision; reason?: string }
   try {
-    body = await request.json()
-  } catch {
-    return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
-  }
+    const auth = await requireUser()
+    if ('error' in auth) return auth.error
+    const { user, supabase } = auth
 
-  const { companyId, decision, reason } = body
-  if (!companyId || !decision) {
-    return Response.json({ error: 'companyId and decision are required' }, { status: 400 })
-  }
-  if (!(decision in STAGE_FOR)) {
-    return Response.json({ error: `Invalid decision "${decision}"` }, { status: 400 })
-  }
+    const rl = rateLimit(`decision:${user.id}`, { limit: 20, windowMs: 60_000 })
+    if (!rl.ok) return Errors.rateLimited(rl.retryAfterSec)
+
+    const parsed = await parseJson(request, Schema)
+    if ('error' in parsed) return parsed.error
+    const { companyId, decision, reason } = parsed.data
+
   if (decision === 'disqualified' && !reason?.trim()) {
     // Force a structured reason on disqualify so the database learns from it.
-    return Response.json({ error: 'A reason is required to disqualify a lead' }, { status: 400 })
+    return jsonError('A reason is required to disqualify a lead', 400)
   }
 
   // Resolve which audit to stamp: the one passed, else the company's latest.
-  let auditId = body.auditId
+  let auditId = parsed.data.auditId
   if (!auditId) {
     const { data: latest } = await supabase
       .from('lead_audits')
@@ -66,9 +71,9 @@ export async function POST(request: Request) {
       .eq('id', auditId)
       .eq('company_id', companyId)
       .select('id')
-    if (updErr) return Response.json({ error: updErr.message }, { status: 500 })
+    if (updErr) return Errors.internal()
     if (!updated || updated.length === 0) {
-      return Response.json({ error: 'Audit does not belong to this company' }, { status: 409 })
+      return jsonError('Audit does not belong to this company', 409)
     }
   }
 
@@ -91,5 +96,9 @@ export async function POST(request: Request) {
     metadata: { decision, auditId: auditId ?? null },
   })
 
-  return Response.json({ ok: true, decision, auditId: auditId ?? null })
+    return Response.json({ ok: true, decision, auditId: auditId ?? null })
+  } catch (err) {
+    captureError(err, { route: 'decision' })
+    return Errors.internal()
+  }
 }

@@ -2,17 +2,37 @@ import { openai } from '@/lib/openai'
 import { searchOrganizations } from '@/lib/apollo'
 import { searchCompanies as ziSearchCompanies } from '@/lib/zoominfo'
 import { googleSearch, extractCompaniesFromSearch } from '@/lib/serp'
+import { z } from 'zod'
+import { requireUser } from '@/lib/api/auth'
+import { rateLimit } from '@/lib/api/rate-limit'
+import { parseJson } from '@/lib/api/validate'
+import { Errors } from '@/lib/api/responses'
+import { captureError } from '@/lib/logger'
 
 export const maxDuration = 60
 
-export async function POST(request: Request) {
-  try {
-    const body = await request.json()
-    const { industry, location, companySize, triggerSignals, count, vertical } = body
+const LeadsSchema = z.object({
+  industry: z.string().min(1),
+  location: z.string().optional(),
+  companySize: z.string().optional(),
+  triggerSignals: z.array(z.string()).optional(),
+  count: z.number().optional(),
+  vertical: z.string().optional(),
+})
 
-    if (!industry) {
-      return Response.json({ error: 'Industry is required' }, { status: 400 })
-    }
+export async function POST(request: Request) {
+  const auth = await requireUser()
+  if ('error' in auth) return auth.error
+  const { user } = auth
+
+  const rl = rateLimit(`leads:${user.id}`, { limit: 20, windowMs: 60_000 })
+  if (!rl.ok) return Errors.rateLimited(rl.retryAfterSec)
+
+  const parsed = await parseJson(request, LeadsSchema)
+  if ('error' in parsed) return parsed.error
+  const { industry, location, companySize, triggerSignals, count, vertical } = parsed.data
+
+  try {
 
     const foundCompanies: { name: string; website?: string; location?: string; source: string; description?: string }[] = []
     const errors: string[] = []
@@ -105,7 +125,7 @@ ${unique.slice(0, 20).map((c, i) => `${i + 1}. ${c.name}${c.description ? ` (${c
 
 Target: ${vertical || 'any'} vertical, company size: ${companySize}, trigger signals: ${triggerSignals?.join(', ')}
 
-For each company, assess their CRE needs and return the top ${Math.min(count, unique.length)} most relevant ones.
+For each company, assess their CRE needs and return the top ${Math.min(count as number, unique.length)} most relevant ones.
 Return JSON array: [{
   "company_name": "exact name from list",
   "website": "website if known",
@@ -150,7 +170,7 @@ Return JSON array: [{
       errors: errors.length > 0 ? errors : undefined,
     })
   } catch (err) {
-    console.error('Lead finder error:', err)
-    return Response.json({ error: 'Lead search failed', leads: [] }, { status: 500 })
+    captureError(err, { route: 'leads' })
+    return Errors.internal()
   }
 }

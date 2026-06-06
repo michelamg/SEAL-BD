@@ -1,15 +1,21 @@
-import { createClient } from '@/lib/supabase/server'
 import { buildSalesforceCsv, type ExportCompany, type ExportContact } from '@/lib/salesforce-export'
 import { recordAudit } from '@/lib/audit-log'
+import { requireUser } from '@/lib/api/auth'
+import { rateLimit } from '@/lib/api/rate-limit'
+import { Errors } from '@/lib/api/responses'
+import { captureError } from '@/lib/logger'
 
 // GET /api/export/salesforce?stage=active
 // Streams a Salesforce-import CSV of companies at the given stage(s). No direct
 // write to Salesforce — C&W's team loads this file (D7). Authenticated only.
 export async function GET(request: Request) {
-  const supabase = await createClient()
-  const { data: userData } = await supabase.auth.getUser()
-  const user = userData.user
-  if (!user) return Response.json({ error: 'Not authenticated' }, { status: 401 })
+  try {
+    const auth = await requireUser()
+    if ('error' in auth) return auth.error
+    const { user, supabase } = auth
+
+    const rl = rateLimit(`export:${user.id}`, { limit: 10, windowMs: 60_000 })
+    if (!rl.ok) return Errors.rateLimited(rl.retryAfterSec)
 
   const url = new URL(request.url)
   const stageParam = url.searchParams.get('stage') ?? 'active'
@@ -21,7 +27,7 @@ export async function GET(request: Request) {
     .in('stage', stages)
     .order('current_score', { ascending: false, nullsFirst: false })
 
-  if (error) return Response.json({ error: error.message }, { status: 500 })
+  if (error) return Errors.internal()
 
   const companies: ExportCompany[] = ((data as Record<string, unknown>[]) ?? []).map((c) => ({
     name: c.name as string,
@@ -63,6 +69,10 @@ export async function GET(request: Request) {
       'Content-Disposition': `attachment; filename="${filename}"`,
     },
   })
+  } catch (err) {
+    captureError(err, { route: 'export/salesforce' })
+    return Errors.internal()
+  }
 }
 
 // Prefer a C-suite contact with an email; fall back to any emailed contact, then
