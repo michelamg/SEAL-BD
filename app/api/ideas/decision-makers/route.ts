@@ -1,9 +1,13 @@
 import { openai } from '@/lib/openai'
 import { searchPeople, formatApolloContact } from '@/lib/apollo'
+import { createClient } from '@/lib/supabase/server'
 
 export const maxDuration = 60
 
 export async function POST(request: Request) {
+  const { data: { user } } = await (await createClient()).auth.getUser()
+  if (!user) return Response.json({ error: 'Not authenticated' }, { status: 401 })
+
   try {
     const { companyName, industry, location } = await request.json()
 
@@ -71,6 +75,6 @@ Use realistic titles specific to this type of company. Focus on: CFO, VP Real Es
     return Response.json({ contacts })
   } catch (err) {
     console.error('Decision makers error:', err)
-    return Response.json({ error: String(err), contacts: [] }, { status: 500 })
+    return Response.json({ error: 'Request failed', contacts: [] }, { status: 500 })
   }
 }

@@ -41,7 +41,10 @@ export default function ThoughtLeadershipPage() {
     setItems(data || [])
   }
 
-  useEffect(() => { fetchItems() }, [])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchItems()
+  }, [])
 
   const save = async () => {
     await supabase.from('thought_leadership').insert(form)

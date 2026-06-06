@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { signOut } from '@/app/login/actions'
 import {
   LayoutDashboard,
   Building2,
@@ -14,13 +15,16 @@ import {
   BarChart3,
   CheckSquare,
   FileText,
+  ClipboardCheck,
   ChevronRight,
+  LogOut,
 } from 'lucide-react'
 
 const NAV = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { divider: 'Track A — New Clients' },
   { href: '/leads', label: 'Lead Finder', icon: Search },
+  { href: '/qualify', label: 'Qualify Queue', icon: ClipboardCheck },
   { href: '/crm/companies', label: 'Companies', icon: Building2 },
   { href: '/crm/contacts', label: 'Contacts', icon: Users },
   { href: '/outreach', label: 'Outreach', icon: Mail },
@@ -33,7 +37,7 @@ const NAV = [
   { href: '/thought-leadership', label: 'Thought Leadership', icon: FileText },
 ] as const
 
-export function Sidebar() {
+export function Sidebar({ userEmail }: { userEmail?: string }) {
   const pathname = usePathname()
 
   return (
@@ -81,9 +85,30 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Footer */}
-      <div className="px-4 py-3 border-t border-border">
-        <p className="text-[10px] text-muted-foreground">Cushman & Wakefield · {new Date().getFullYear()}</p>
+      {/* Footer — current user + sign-out */}
+      <div className="px-3 py-3 border-t border-border space-y-2">
+        {userEmail && (
+          <div className="flex items-center gap-2 px-1">
+            <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[11px] font-semibold uppercase shrink-0">
+              {userEmail.slice(0, 2)}
+            </div>
+            <p className="text-xs text-muted-foreground truncate" title={userEmail}>
+              {userEmail}
+            </p>
+          </div>
+        )}
+        <form action={signOut}>
+          <button
+            type="submit"
+            className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-md text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          >
+            <LogOut className="w-4 h-4 shrink-0" />
+            Sign out
+          </button>
+        </form>
+        <p className="text-[10px] text-muted-foreground px-1">
+          Cushman &amp; Wakefield · {new Date().getFullYear()}
+        </p>
       </div>
     </aside>
   )

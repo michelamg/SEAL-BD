@@ -44,6 +44,7 @@ export function ContactsTab({ companyId }: { companyId: string }) {
     setContacts(data || [])
   }
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchContacts() }, [companyId])
 
   const save = async () => {

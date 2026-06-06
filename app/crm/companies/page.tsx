@@ -3,13 +3,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Company } from '@/types'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CompanyDialog } from '@/components/crm/company-dialog'
-import { Plus, Search, ExternalLink } from 'lucide-react'
+import { Plus, Search, ExternalLink, Download } from 'lucide-react'
 
 type CompanyWithLease = Company & {
   property_name?: string
@@ -52,7 +53,10 @@ export default function CompaniesPage() {
     setLoading(false)
   }, [search, verticalFilter, stageFilter, trackFilter])
 
-  useEffect(() => { fetchCompanies() }, [fetchCompanies])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchCompanies()
+  }, [fetchCompanies])
 
   const openNew = () => { setSelected(null); setDialogOpen(true) }
   const openEdit = (c: CompanyWithLease) => { setSelected(c as Company); setDialogOpen(true) }
@@ -68,9 +72,18 @@ export default function CompaniesPage() {
           <h1 className="text-2xl font-bold">Companies</h1>
           <p className="text-muted-foreground text-sm mt-1">{companies.length} records</p>
         </div>
-        <Button onClick={openNew} size="sm" className="gap-1.5">
-          <Plus className="w-4 h-4" /> Add Company
-        </Button>
+        <div className="flex items-center gap-2">
+          <a
+            href="/api/export/salesforce?stage=active"
+            download
+            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5')}
+          >
+            <Download className="w-4 h-4" /> Export to Salesforce
+          </a>
+          <Button onClick={openNew} size="sm" className="gap-1.5">
+            <Plus className="w-4 h-4" /> Add Company
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}

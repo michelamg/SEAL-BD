@@ -1,10 +1,18 @@
 import { openai } from '@/lib/openai'
+import { createClient } from '@/lib/supabase/server'
 
 export const maxDuration = 60
 
 export async function POST(request: Request) {
+  const { data: { user } } = await (await createClient()).auth.getUser()
+  if (!user) return Response.json({ error: 'Not authenticated' }, { status: 401 })
+
   try {
     const { prompt } = await request.json()
+
+    if (typeof prompt !== 'string' || prompt.length > 4000) {
+      return Response.json({ error: 'Invalid prompt', result: '' }, { status: 400 })
+    }
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
@@ -28,6 +36,6 @@ export async function POST(request: Request) {
     return Response.json({ result: raw })
   } catch (err) {
     console.error('Ideas generate error:', err)
-    return Response.json({ error: String(err), result: '' }, { status: 500 })
+    return Response.json({ error: 'Request failed', result: '' }, { status: 500 })
   }
 }

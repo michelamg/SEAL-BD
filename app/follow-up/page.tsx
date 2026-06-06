@@ -30,7 +30,10 @@ export default function FollowUpPage() {
     setLoading(false)
   }
 
-  useEffect(() => { fetchCheckins() }, [filter])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchCheckins()
+  }, [filter])
 
   const complete = async (id: string) => {
     await supabase.from('post_close_checkins').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', id)

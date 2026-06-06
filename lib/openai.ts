@@ -69,59 +69,15 @@ Return JSON: { "subject": "...", "body": "..." }`
     messages: [{ role: 'user', content: prompt }],
     response_format: { type: 'json_object' },
     temperature: 0.7,
-  })
+  }, { timeout: 30000 })
 
-  return JSON.parse(response.choices[0].message.content || '{}') as { subject: string; body: string }
-}
-
-export async function generateLeads({
-  industry,
-  location,
-  companySize,
-  triggerSignals,
-  count,
-  vertical,
-}: {
-  industry: string
-  location: string
-  companySize: string
-  triggerSignals: string[]
-  count: number
-  vertical?: string
-}) {
-  const prompt = `You are a commercial real estate business development analyst for Cushman & Wakefield in ${location}.
-
-Find ${count} real companies in the ${industry} industry in ${location} that match:
-- Company size: ${companySize} employees
-- Trigger signals: ${triggerSignals.join(', ')}
-${vertical ? `- CRE vertical: ${vertical}` : ''}
-
-For each company provide realistic, research-based data. Focus on companies likely to need commercial real estate (office, lab, industrial, flex).
-
-Return JSON array: [{
-  "company_name": "...",
-  "website": "...",
-  "industry": "...",
-  "location": "...",
-  "employee_count": "...",
-  "estimated_sf": 0,
-  "priority": "HIGH|MEDIUM|LOW",
-  "trigger_signal": "specific signal type",
-  "trigger_detail": "specific detail about the trigger (e.g. '$12M Series B raised March 2026')",
-  "outreach_recommendation": "one specific personalized outreach angle",
-  "vertical_fit": "NIC|Tech|Life Sci|Defense|Pro Services|Other",
-  "source": "Apollo.io|News|LinkedIn"
-}]`
-
-  const response = await openai.chat.completions.create({
-    model: 'gpt-4o',
-    messages: [{ role: 'user', content: prompt }],
-    response_format: { type: 'json_object' },
-    temperature: 0.8,
-  })
-
-  const data = JSON.parse(response.choices[0].message.content || '{"leads":[]}')
-  return (data.leads || data) as unknown[]
+  const content = response.choices?.[0]?.message?.content
+  try {
+    return JSON.parse(content || '{}') as { subject: string; body: string }
+  } catch (err) {
+    console.error(err)
+    return { subject: '', body: '' }
+  }
 }
 
 export async function generateWhitePaperOutline({
@@ -150,7 +106,13 @@ Return JSON: {
     messages: [{ role: 'user', content: prompt }],
     response_format: { type: 'json_object' },
     temperature: 0.7,
-  })
+  }, { timeout: 30000 })
 
-  return JSON.parse(response.choices[0].message.content || '{}')
+  const content = response.choices?.[0]?.message?.content
+  try {
+    return JSON.parse(content || '{}')
+  } catch (err) {
+    console.error(err)
+    return {}
+  }
 }

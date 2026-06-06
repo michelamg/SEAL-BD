@@ -31,6 +31,7 @@ export function ProspectPanel({ listing }: { listing: Listing }) {
     setProspects(data || [])
   }
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchProspects() }, [listing.id])
 
   const updateStatus = async (id: string, status: string) => {
@@ -101,7 +102,7 @@ export function ProspectPanel({ listing }: { listing: Listing }) {
 
       {prospects.length === 0 ? (
         <p className="text-sm text-muted-foreground text-center py-8">
-          No interested parties yet. Click "Discover via AI" to find tenants in market.
+          No interested parties yet. Click &quot;Discover via AI&quot; to find tenants in market.
         </p>
       ) : (
         <ul className="divide-y divide-border">

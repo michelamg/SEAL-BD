@@ -2,9 +2,18 @@ export const maxDuration = 60
 
 import { searchPeople, enrichCompany, formatApolloContact } from '@/lib/apollo'
 import { searchContacts as ziSearchContacts } from '@/lib/zoominfo'
+import { createClient } from '@/lib/supabase/server'
 
 export async function POST(request: Request) {
-  const body = await request.json()
+  const { data: { user } } = await (await createClient()).auth.getUser()
+  if (!user) return Response.json({ error: 'Not authenticated' }, { status: 401 })
+
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
   const { companyName, domain } = body
 
   const contacts: ReturnType<typeof formatApolloContact>[] = []

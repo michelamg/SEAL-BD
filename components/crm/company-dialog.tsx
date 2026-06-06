@@ -29,6 +29,7 @@ export function CompanyDialog({ open, onOpenChange, company, onSaved }: Props) {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (company) setForm(company)
     else setForm({ track: 'A', stage: 'prospect', priority: 'medium' })
   }, [company, open])

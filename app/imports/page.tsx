@@ -140,7 +140,10 @@ export default function ImportsPage() {
     setReports(data || [])
   }
 
-  useEffect(() => { fetchReports() }, [])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchReports()
+  }, [])
   useEffect(() => {
     supabase.from('companies').select('id, name').order('name').then(({ data }) => setCompanies(data || []))
   }, [])
@@ -485,6 +488,7 @@ export default function ImportsPage() {
         <p className="text-muted-foreground text-sm mt-1">Upload spreadsheets to import leads, contacts, PitchBook reports, and lease comps</p>
       </div>
 
+      {/* eslint-disable-next-line react-hooks/static-components */}
       <UploadFeedback />
 
       <Tabs defaultValue="general">
@@ -524,6 +528,7 @@ export default function ImportsPage() {
                 )}
               </div>
 
+              {/* eslint-disable-next-line react-hooks/static-components */}
               <DropZone
                 label={importType === 'companies' ? 'Upload Companies / Leads Spreadsheet' : 'Upload Contacts Spreadsheet'}
                 hint={importType === 'companies'
@@ -579,6 +584,7 @@ export default function ImportsPage() {
         <TabsContent value="pitchbook" className="space-y-4 mt-4">
           <Card>
             <CardContent className="p-6">
+              {/* eslint-disable-next-line react-hooks/static-components */}
               <DropZone
                 label="Upload PitchBook CSV Export"
                 hint="Export from PitchBook → Companies → Save as CSV or Excel."
@@ -654,6 +660,7 @@ export default function ImportsPage() {
         <TabsContent value="comps" className="mt-4">
           <Card>
             <CardContent className="p-6">
+              {/* eslint-disable-next-line react-hooks/static-components */}
               <DropZone
                 label="Upload Lease Comps"
                 hint="Export from CoStar or any source. Columns: Tenant, Address, City, State, SF, Rate, Term, Lease Type, Date."

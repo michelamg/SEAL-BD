@@ -32,7 +32,8 @@ export async function POST(request: Request) {
         names.forEach(name => foundCompanies.push({ name, source: 'Google Search' }))
       }
     } catch (e) {
-      errors.push(`Google: ${e}`)
+      console.error(e)
+      errors.push('Google Search')
     }
 
     // ── 2. Apollo.io ──────────────────────────────────────────────────────
@@ -48,7 +49,8 @@ export async function POST(request: Request) {
         })
       })
     } catch (e) {
-      errors.push(`Apollo: ${e}`)
+      console.error(e)
+      errors.push('Apollo')
     }
 
     // ── 3. ZoomInfo ───────────────────────────────────────────────────────
@@ -69,7 +71,8 @@ export async function POST(request: Request) {
         })
       })
     } catch (e) {
-      errors.push(`ZoomInfo: ${e}`)
+      console.error(e)
+      errors.push('ZoomInfo')
     }
 
     // ── 4. Deduplicate ────────────────────────────────────────────────────
@@ -81,12 +84,24 @@ export async function POST(request: Request) {
       return true
     })
 
-    // ── 5. Use OpenAI to score + enrich what we found (or generate if no results) ──
-    const prompt = unique.length > 0
-      ? `You are a CRE analyst for Cushman & Wakefield. Score and enrich these REAL companies for commercial real estate outreach.
+    // ── 5. Score + enrich ONLY the REAL companies we found. Never fabricate. ──
+    // Trust rule (CONTEXT.md D3/D4): if the live sources returned nothing, return nothing.
+    // The model scores and narrates verified companies; it never invents them.
+    if (unique.length === 0) {
+      return Response.json({
+        leads: [],
+        sources_used: ['Google Search', 'Apollo.io', 'ZoomInfo'].filter(s =>
+          foundCompanies.some(c => c.source === s)),
+        raw_found: 0,
+        message: 'No companies surfaced from the live sources for this search. Nothing was fabricated; try broadening the criteria or adding signals.',
+        errors: errors.length > 0 ? errors : undefined,
+      })
+    }
+
+    const prompt = `You are a CRE analyst for Cushman & Wakefield. Score and enrich these REAL companies for commercial real estate outreach. Use ONLY the companies in the list below. Do NOT invent companies and do NOT fabricate facts; assess based only on what is provided.
 
 Companies found for ${industry} in ${location}:
-${unique.slice(0, 20).map((c, i) => `${i + 1}. ${c.name}${c.description ? ` — ${c.description}` : ''}${c.location ? ` (${c.location})` : ''} [Source: ${c.source}]`).join('\n')}
+${unique.slice(0, 20).map((c, i) => `${i + 1}. ${c.name}${c.description ? ` (${c.description})` : ''}${c.location ? ` [${c.location}]` : ''} [Source: ${c.source}]`).join('\n')}
 
 Target: ${vertical || 'any'} vertical, company size: ${companySize}, trigger signals: ${triggerSignals?.join(', ')}
 
@@ -100,33 +115,17 @@ Return JSON array: [{
   "estimated_sf": estimated_sq_footage_need,
   "priority": "HIGH|MEDIUM|LOW",
   "trigger_signal": "most relevant signal type",
-  "trigger_detail": "specific reason this company needs CRE help now",
+  "trigger_detail": "specific reason this company needs CRE help now, based only on the provided data",
   "outreach_recommendation": "specific angle for outreach",
   "vertical_fit": "NIC|Tech|Life Sci|Defense|Pro Services|Other",
   "source": "source name"
-}]`
-      : `You are a CRE analyst for Cushman & Wakefield. Find ${count} REAL companies in ${industry} in ${location} that match: size ${companySize}, signals: ${triggerSignals?.join(', ')}.
-
-Return JSON array: [{
-  "company_name": "...",
-  "website": "...",
-  "industry": "...",
-  "location": "...",
-  "employee_count": "...",
-  "estimated_sf": 0,
-  "priority": "HIGH|MEDIUM|LOW",
-  "trigger_signal": "...",
-  "trigger_detail": "specific detail",
-  "outreach_recommendation": "...",
-  "vertical_fit": "NIC|Tech|Life Sci|Defense|Pro Services|Other",
-  "source": "AI Research"
 }]`
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [{ role: 'user', content: prompt }],
       response_format: { type: 'json_object' },
-      temperature: 0.6,
+      temperature: 0.3,
     })
 
     const raw = response.choices[0].message.content || '{"leads":[]}'
@@ -152,6 +151,6 @@ Return JSON array: [{
     })
   } catch (err) {
     console.error('Lead finder error:', err)
-    return Response.json({ error: String(err), leads: [] }, { status: 500 })
+    return Response.json({ error: 'Lead search failed', leads: [] }, { status: 500 })
   }
 }

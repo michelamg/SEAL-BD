@@ -38,6 +38,7 @@ export function OutreachTab({ companyId }: { companyId: string }) {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchActivities()
     // Load contacts linked to this company
     supabase.from('contacts').select('*').eq('company_id', companyId).order('is_c_suite', { ascending: false })

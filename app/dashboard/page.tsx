@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase/server'
 import { StatsRow } from '@/components/dashboard/stats-row'
 import { PipelineChart } from '@/components/dashboard/pipeline-chart'
 import { RecentActivity } from '@/components/dashboard/recent-activity'
@@ -8,6 +8,9 @@ import { PostCloseAlert } from '@/components/dashboard/post-close-alert'
 export const dynamic = 'force-dynamic'
 
 async function getDashboardData() {
+  // Server Component: use the request-scoped session client so RLS applies as
+  // the signed-in user. (The browser `supabase` singleton has no session here.)
+  const supabase = await createClient()
   const [
     { count: totalProspects },
     { count: activeCompanies },

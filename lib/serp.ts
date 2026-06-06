@@ -8,7 +8,12 @@ interface SerpResult {
 }
 
 export async function googleSearch(query: string): Promise<SerpResult[]> {
-  if (!SERP_API_KEY) return []
+  if (!SERP_API_KEY) {
+    console.warn('googleSearch: SERP_API_KEY not configured, returning no results')
+    return []
+  }
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 10000)
   try {
     const params = new URLSearchParams({
       api_key: SERP_API_KEY,
@@ -16,12 +21,20 @@ export async function googleSearch(query: string): Promise<SerpResult[]> {
       num: '10',
       engine: 'google',
     })
-    const res = await fetch(`https://serpapi.com/search?${params}`)
-    if (!res.ok) return []
+    const res = await fetch(`https://serpapi.com/search?${params}`, {
+      signal: controller.signal,
+    })
+    if (!res.ok) {
+      console.warn(`googleSearch: SerpAPI returned ${res.status}, returning no results`)
+      return []
+    }
     const data = await res.json()
     return data.organic_results || []
-  } catch {
+  } catch (err) {
+    console.warn('googleSearch: request failed, returning no results', err)
     return []
+  } finally {
+    clearTimeout(timeout)
   }
 }
 

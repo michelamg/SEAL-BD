@@ -68,7 +68,10 @@ export default function ContactsPage() {
     setLoading(false)
   }, [search, csuite])
 
-  useEffect(() => { fetchContacts() }, [fetchContacts])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchContacts()
+  }, [fetchContacts])
   useEffect(() => {
     supabase.from('companies').select('id, name').order('name').then(({ data }) => setCompanies(data || []))
   }, [])

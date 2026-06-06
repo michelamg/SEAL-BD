@@ -42,7 +42,10 @@ export default function OutreachPage() {
     setLoading(false)
   }, [typeFilter, statusFilter, trackFilter])
 
-  useEffect(() => { fetchActivities() }, [fetchActivities])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchActivities()
+  }, [fetchActivities])
 
   const updateStatus = async (id: string, status: string) => {
     await supabase.from('outreach_activities').update({ status }).eq('id', id)

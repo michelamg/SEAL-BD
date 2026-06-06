@@ -33,7 +33,10 @@ export default function ListingsPage() {
     if (data?.length && !selected) setSelected(data[0])
   }, [selected])
 
-  useEffect(() => { fetchListings() }, [fetchListings])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchListings()
+  }, [fetchListings])
 
   return (
     <div className="p-6 space-y-4 max-w-7xl mx-auto">

@@ -1,9 +1,19 @@
 export const maxDuration = 60
 
 import { openai } from '@/lib/openai'
+import { createClient } from '@/lib/supabase/server'
 
 export async function POST(request: Request) {
-  const body = await request.json()
+  const { data: { user } } = await (await createClient()).auth.getUser()
+  if (!user) return Response.json({ error: 'Not authenticated' }, { status: 401 })
+
+  let body
+  try {
+    body = await request.json()
+  } catch (err) {
+    console.error(err)
+    return Response.json({ error: 'Invalid request body' }, { status: 400 })
+  }
   const { listingName, location, verticals, sizeSf } = body
 
   const prompt = `You are a commercial real estate analyst for Cushman & Wakefield.
@@ -36,6 +46,12 @@ Return JSON array: [{
     temperature: 0.8,
   })
 
-  const data = JSON.parse(response.choices[0].message.content || '{"prospects":[]}')
+  let data
+  try {
+    data = JSON.parse(response.choices[0].message.content || '{"prospects":[]}')
+  } catch (err) {
+    console.error(err)
+    return Response.json({ error: 'Generation failed' }, { status: 500 })
+  }
   return Response.json({ prospects: data.prospects || data })
 }

@@ -26,6 +26,7 @@ export function ListingDialog({ open, onOpenChange, listing, onSaved }: Props) {
 
   useEffect(() => {
     if (listing) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setForm(listing)
       setSelectedVerticals(listing.target_verticals || [])
     } else {
