@@ -11,6 +11,13 @@ on:
 jobs:
   analyze:
     name: Analyze
+    # CodeQL code scanning requires GitHub Advanced Security, which is not
+    # available on a private repo without a paid GHAS license (free only on public
+    # repos). Gated off by default so it doesn't fail every run; set the repo
+    # variable ENABLE_CODEQL=true once this lands on a repo/org with GHAS (e.g.
+    # C&W's). Until then security is covered by typecheck/lint/test, gitleaks, and
+    # Dependabot.
+    if: ${{ vars.ENABLE_CODEQL == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       actions: read

@@ -1,6 +1,24 @@
 import OpenAI from 'openai'
 
-export const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+// Lazily constructed so the client is never built at module-load. `next build`
+// evaluates route modules to collect page data; an eager `new OpenAI()` throws
+// "Missing credentials" wherever OPENAI_API_KEY isn't set at build time (CI, or
+// any build env without the key). The proxy keeps every `openai.chat...` call
+// site unchanged while deferring construction to the first real call (which runs
+// with the key present).
+let client: OpenAI | undefined
+function getClient(): OpenAI {
+  client ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  return client
+}
+
+export const openai = new Proxy({} as OpenAI, {
+  get(_target, prop) {
+    const c = getClient()
+    const value = c[prop as keyof OpenAI]
+    return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(c) : value
+  },
+})
 
 export const VERTICALS = ['NIC', 'Tech', 'Life Sci', 'Defense', 'Pro Services'] as const
 
