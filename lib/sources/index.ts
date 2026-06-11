@@ -1,13 +1,16 @@
 import type { LeadSource, RawSignal, SourceCompany } from './types'
 import { secEdgarSource } from './sec-edgar'
+import { exploriumSource } from './explorium'
 
 export type { LeadSource, RawSignal, SourceCompany } from './types'
 
 // The source registry. Add a connector here and the whole pipeline picks it up
-// (D10 pluggable architecture). Phase 2 adds USPTO, county permits, FDA/DoD
-// awards, hiring/ATS, dedicated news. SerpAPI/Apollo/ZoomInfo already feed the
-// finder and can be adapted into LeadSources later.
-export const SOURCES: LeadSource[] = [secEdgarSource]
+// (D10 pluggable architecture). `gatherSignals` only runs the ones with
+// `enabled: true`, so a flagged-off source (e.g. Explorium until it's keyed +
+// EXPLORIUM_ENABLED=true) costs nothing. Phase 2 also adds USPTO, county permits,
+// FDA/DoD awards, hiring/ATS, dedicated news; SerpAPI/Apollo/ZoomInfo already
+// feed the finder and can be adapted into LeadSources later.
+export const SOURCES: LeadSource[] = [secEdgarSource, exploriumSource]
 
 const DAY_MS = 86_400_000
 

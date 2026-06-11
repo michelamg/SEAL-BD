@@ -21,6 +21,10 @@ const envSchema = z.object({
   ZOOMINFO_PRIVATE_KEY: z.string().optional(),
   ALLOWED_SIGNUP_DOMAINS: z.string().optional(),
   SEC_EDGAR_UA: z.string().optional(),
+  // Explorium (Vibe Prospecting) — Phase 2 signal source, off unless enabled.
+  EXPLORIUM_API_KEY: z.string().optional(),
+  EXPLORIUM_API_BASE: z.string().url().optional(),
+  EXPLORIUM_ENABLED: z.enum(['true', 'false']).optional(),
 })
 
 export type Env = z.infer<typeof envSchema>
