@@ -3,6 +3,7 @@ import { secEdgarSource } from './sec-edgar'
 import { exploriumSource } from './explorium'
 import { usaSpendingSource } from './usaspending'
 import { newsSource } from './news'
+import { permitsSource } from './permits'
 
 export type { LeadSource, RawSignal, SourceCompany } from './types'
 
@@ -12,7 +13,13 @@ export type { LeadSource, RawSignal, SourceCompany } from './types'
 // SERP_API_KEY is set) covers most of a paid aggregator's event value at ~$0;
 // Explorium stays flagged off until it's keyed + validated. Future adds: USPTO,
 // county permits, ATS/hiring feeds.
-export const SOURCES: LeadSource[] = [secEdgarSource, usaSpendingSource, newsSource, exploriumSource]
+export const SOURCES: LeadSource[] = [
+  secEdgarSource,
+  usaSpendingSource,
+  newsSource,
+  permitsSource,
+  exploriumSource,
+]
 
 const DAY_MS = 86_400_000
 

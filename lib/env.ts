@@ -25,6 +25,9 @@ const envSchema = z.object({
   EXPLORIUM_API_KEY: z.string().optional(),
   EXPLORIUM_API_BASE: z.string().url().optional(),
   EXPLORIUM_ENABLED: z.enum(['true', 'false']).optional(),
+  // Building permits — JSON array of Socrata dataset specs; empty = source off.
+  PERMITS_DATASETS: z.string().optional(),
+  SOCRATA_APP_TOKEN: z.string().optional(),
 })
 
 export type Env = z.infer<typeof envSchema>
