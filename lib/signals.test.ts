@@ -21,6 +21,13 @@ describe('inferSignalType', () => {
   it('classifies SEC filings', () => {
     expect(inferSignalType('Filed an 8-K with the SEC')).toBe('filing')
   })
+  it('matches inflected forms of prefix tokens', () => {
+    expect(inferSignalType('Acme announces expansion to Austin')).toBe('expansion')
+    expect(inferSignalType('Company is expanding its footprint')).toBe('expansion')
+    expect(inferSignalType('Tenant relocating to a larger space')).toBe('lease')
+    expect(inferSignalType('Lease expiring next year')).toBe('lease')
+    expect(inferSignalType('Board appointed a new chair')).toBe('leadership')
+  })
   it('falls back to other for unrecognized text', () => {
     expect(inferSignalType('quarterly newsletter')).toBe('other')
     expect(inferSignalType('')).toBe('other')

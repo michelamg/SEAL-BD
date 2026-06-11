@@ -1,16 +1,18 @@
 import type { LeadSource, RawSignal, SourceCompany } from './types'
 import { secEdgarSource } from './sec-edgar'
 import { exploriumSource } from './explorium'
+import { usaSpendingSource } from './usaspending'
+import { newsSource } from './news'
 
 export type { LeadSource, RawSignal, SourceCompany } from './types'
 
 // The source registry. Add a connector here and the whole pipeline picks it up
 // (D10 pluggable architecture). `gatherSignals` only runs the ones with
-// `enabled: true`, so a flagged-off source (e.g. Explorium until it's keyed +
-// EXPLORIUM_ENABLED=true) costs nothing. Phase 2 also adds USPTO, county permits,
-// FDA/DoD awards, hiring/ATS, dedicated news; SerpAPI/Apollo/ZoomInfo already
-// feed the finder and can be adapted into LeadSources later.
-export const SOURCES: LeadSource[] = [secEdgarSource, exploriumSource]
+// `enabled: true`. The free layer (SEC EDGAR + USASpending, always on; News when
+// SERP_API_KEY is set) covers most of a paid aggregator's event value at ~$0;
+// Explorium stays flagged off until it's keyed + validated. Future adds: USPTO,
+// county permits, ATS/hiring feeds.
+export const SOURCES: LeadSource[] = [secEdgarSource, usaSpendingSource, newsSource, exploriumSource]
 
 const DAY_MS = 86_400_000
 
