@@ -1,4 +1,5 @@
 import type { SignalType } from '@/lib/scoring'
+import { fetchJsonSafe } from '@/lib/http'
 import type { LeadSource, RawSignal, SourceCompany } from './types'
 
 // SEC EDGAR full-text search — free, authoritative, no API key. SEC requires a
@@ -72,20 +73,12 @@ export const secEdgarSource: LeadSource = {
   enabled: true,
   async fetchSignals(company: SourceCompany): Promise<RawSignal[]> {
     const params = new URLSearchParams({ q: `"${company.name}"`, forms: FORMS })
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 8000)
-    try {
-      const res = await fetch(`${EDGAR_FTS}?${params.toString()}`, {
-        headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-        signal: controller.signal,
-      })
-      if (!res.ok) return []
-      const json = (await res.json()) as EdgarResponse
-      return parseEdgarHits(json)
-    } catch {
-      return [] // a flaky source never breaks the pipeline
-    } finally {
-      clearTimeout(timeout)
-    }
+    const json = await fetchJsonSafe<EdgarResponse>(
+      `${EDGAR_FTS}?${params.toString()}`,
+      { headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' } },
+      {},
+      8000,
+    )
+    return parseEdgarHits(json)
   },
 }

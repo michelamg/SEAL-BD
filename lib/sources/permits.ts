@@ -1,3 +1,4 @@
+import { fetchJsonSafe } from '@/lib/http'
 import type { LeadSource, RawSignal, SourceCompany } from './types'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -77,25 +78,16 @@ export const permitsSource: LeadSource = {
   enabled: DATASETS.length > 0,
   async fetchSignals(company: SourceCompany): Promise<RawSignal[]> {
     if (DATASETS.length === 0) return []
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 10_000)
-    try {
-      const perDataset = await Promise.allSettled(
-        DATASETS.map(async (ds) => {
-          const res = await fetch(buildPermitQueryUrl(ds, company.name), {
-            headers: APP_TOKEN ? { 'X-App-Token': APP_TOKEN } : {},
-            signal: controller.signal,
-          })
-          if (!res.ok) return []
-          const rows = (await res.json()) as Record<string, unknown>[]
-          return mapPermitRows(Array.isArray(rows) ? rows : [], ds)
-        }),
-      )
-      return perDataset.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
-    } catch {
-      return []
-    } finally {
-      clearTimeout(timeout)
-    }
+    const perDataset = await Promise.allSettled(
+      DATASETS.map(async (ds) => {
+        const rows = await fetchJsonSafe<Record<string, unknown>[]>(
+          buildPermitQueryUrl(ds, company.name),
+          { headers: APP_TOKEN ? { 'X-App-Token': APP_TOKEN } : {} },
+          [],
+        )
+        return mapPermitRows(Array.isArray(rows) ? rows : [], ds)
+      }),
+    )
+    return perDataset.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
   },
 }

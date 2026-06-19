@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from '@/lib/http'
+
 const SERP_API_KEY = process.env.SERP_API_KEY
 
 interface SerpResult {
@@ -12,8 +14,6 @@ export async function googleSearch(query: string): Promise<SerpResult[]> {
     console.warn('googleSearch: SERP_API_KEY not configured, returning no results')
     return []
   }
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 10000)
   try {
     const params = new URLSearchParams({
       api_key: SERP_API_KEY,
@@ -21,9 +21,7 @@ export async function googleSearch(query: string): Promise<SerpResult[]> {
       num: '10',
       engine: 'google',
     })
-    const res = await fetch(`https://serpapi.com/search?${params}`, {
-      signal: controller.signal,
-    })
+    const res = await fetchWithTimeout(`https://serpapi.com/search?${params}`)
     if (!res.ok) {
       console.warn(`googleSearch: SerpAPI returned ${res.status}, returning no results`)
       return []
@@ -33,8 +31,6 @@ export async function googleSearch(query: string): Promise<SerpResult[]> {
   } catch (err) {
     console.warn('googleSearch: request failed, returning no results', err)
     return []
-  } finally {
-    clearTimeout(timeout)
   }
 }
 

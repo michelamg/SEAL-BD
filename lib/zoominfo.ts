@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from '@/lib/http'
+
 const ZOOMINFO_CLIENT_ID = process.env.ZOOMINFO_CLIENT_ID
 const ZOOMINFO_PRIVATE_KEY = process.env.ZOOMINFO_PRIVATE_KEY
 const ZOOMINFO_BASE = 'https://api.zoominfo.com'
@@ -9,24 +11,17 @@ let ziTokenInFlight: Promise<string> | null = null
 async function fetchZiToken(): Promise<string> {
   if (!ZOOMINFO_CLIENT_ID || !ZOOMINFO_PRIVATE_KEY) throw new Error('ZoomInfo credentials not configured')
 
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 10000)
-  try {
-    const res = await fetch(`${ZOOMINFO_BASE}/authenticate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ client_id: ZOOMINFO_CLIENT_ID, private_key: ZOOMINFO_PRIVATE_KEY }),
-      signal: controller.signal,
-    })
-    if (!res.ok) throw new Error(`ZoomInfo auth failed: ${res.status}`)
-    const data = await res.json()
-    if (!data.jwt) throw new Error('ZoomInfo auth returned no jwt')
-    ziToken = data.jwt
-    ziTokenExpiry = Date.now() + 55 * 60 * 1000 // 55 min
-    return ziToken!
-  } finally {
-    clearTimeout(timeout)
-  }
+  const res = await fetchWithTimeout(`${ZOOMINFO_BASE}/authenticate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: ZOOMINFO_CLIENT_ID, private_key: ZOOMINFO_PRIVATE_KEY }),
+  })
+  if (!res.ok) throw new Error(`ZoomInfo auth failed: ${res.status}`)
+  const data = await res.json()
+  if (!data.jwt) throw new Error('ZoomInfo auth returned no jwt')
+  ziToken = data.jwt
+  ziTokenExpiry = Date.now() + 55 * 60 * 1000 // 55 min
+  return ziToken!
 }
 
 async function getZiToken(): Promise<string> {
@@ -42,21 +37,14 @@ async function getZiToken(): Promise<string> {
 
 async function ziFetchOnce(endpoint: string, body: Record<string, unknown>): Promise<Response> {
   const token = await getZiToken()
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 10000)
-  try {
-    return await fetch(`${ZOOMINFO_BASE}${endpoint}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    })
-  } finally {
-    clearTimeout(timeout)
-  }
+  return fetchWithTimeout(`${ZOOMINFO_BASE}${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  })
 }
 
 async function ziFetch(endpoint: string, body: Record<string, unknown>) {

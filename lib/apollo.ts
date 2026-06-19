@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from '@/lib/http'
+
 const APOLLO_API_KEY = process.env.APOLLO_API_KEY
 const APOLLO_BASE = 'https://api.apollo.io/v1'
 
@@ -29,27 +31,20 @@ interface ApolloPerson {
 
 async function apolloFetch(endpoint: string, body: Record<string, unknown>) {
   if (!APOLLO_API_KEY) throw new Error('APOLLO_API_KEY not configured')
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 10000)
+  const res = await fetchWithTimeout(`${APOLLO_BASE}${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache',
+      'X-Api-Key': APOLLO_API_KEY,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`Apollo API error: ${res.status}`)
   try {
-    const res = await fetch(`${APOLLO_BASE}${endpoint}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache',
-        'X-Api-Key': APOLLO_API_KEY,
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    })
-    if (!res.ok) throw new Error(`Apollo API error: ${res.status}`)
-    try {
-      return await res.json()
-    } catch {
-      throw new Error(`Apollo API error: ${res.status}`)
-    }
-  } finally {
-    clearTimeout(timeout)
+    return await res.json()
+  } catch {
+    throw new Error(`Apollo API error: ${res.status}`)
   }
 }
 

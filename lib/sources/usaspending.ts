@@ -1,3 +1,4 @@
+import { fetchJsonSafe } from '@/lib/http'
 import type { LeadSource, RawSignal, SourceCompany } from './types'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,37 +48,27 @@ export const usaSpendingSource: LeadSource = {
   name: 'USASpending.gov',
   enabled: true, // free + authoritative
   async fetchSignals(company: SourceCompany): Promise<RawSignal[]> {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 10_000)
-    try {
-      const res = await fetch(API, {
+    const json = await fetchJsonSafe<{ results?: UsaSpendingAward[] }>(
+      API,
+      {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          filters: {
-            recipient_search_text: [company.name],
-            award_type_codes: CONTRACT_TYPE_CODES,
-          },
+          filters: { recipient_search_text: [company.name], award_type_codes: CONTRACT_TYPE_CODES },
           fields: ['Recipient Name', 'Award Amount', 'Start Date', 'Award Type', 'Description'],
           limit: 5,
           sort: 'Start Date',
           order: 'desc',
         }),
-        signal: controller.signal,
-      })
-      if (!res.ok) return []
-      const json = (await res.json()) as { results?: UsaSpendingAward[] }
-      // Recipient search is fuzzy; keep only awards whose recipient actually
-      // contains the company name (case-insensitive) to avoid false positives.
-      const needle = company.name.toLowerCase()
-      const matched = (json.results ?? []).filter((a) =>
-        (a['Recipient Name'] ?? '').toLowerCase().includes(needle),
-      )
-      return mapUsaSpendingAwards(matched)
-    } catch {
-      return []
-    } finally {
-      clearTimeout(timeout)
-    }
+      },
+      { results: [] },
+    )
+    // Recipient search is fuzzy; keep only awards whose recipient actually
+    // contains the company name (case-insensitive) to avoid false positives.
+    const needle = company.name.toLowerCase()
+    const matched = (json.results ?? []).filter((a) =>
+      (a['Recipient Name'] ?? '').toLowerCase().includes(needle),
+    )
+    return mapUsaSpendingAwards(matched)
   },
 }

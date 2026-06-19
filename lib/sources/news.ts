@@ -1,4 +1,5 @@
 import { inferSignalType } from '@/lib/signals'
+import { fetchJsonSafe } from '@/lib/http'
 import type { LeadSource, RawSignal, SourceCompany } from './types'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -54,19 +55,9 @@ export const newsSource: LeadSource = {
   enabled: NEWS_ENABLED,
   async fetchSignals(company: SourceCompany): Promise<RawSignal[]> {
     if (!NEWS_ENABLED) return []
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 10_000)
-    try {
-      const q = `"${company.name}" (funding OR raises OR expansion OR relocating OR "new CEO" OR "new CFO" OR hiring OR headquarters)`
-      const url = `https://serpapi.com/search.json?engine=google_news&q=${encodeURIComponent(q)}&api_key=${SERP_API_KEY}`
-      const res = await fetch(url, { signal: controller.signal })
-      if (!res.ok) return []
-      const json = (await res.json()) as { news_results?: NewsResult[] }
-      return mapNewsResults((json.news_results ?? []).slice(0, 10))
-    } catch {
-      return []
-    } finally {
-      clearTimeout(timeout)
-    }
+    const q = `"${company.name}" (funding OR raises OR expansion OR relocating OR "new CEO" OR "new CFO" OR hiring OR headquarters)`
+    const url = `https://serpapi.com/search.json?engine=google_news&q=${encodeURIComponent(q)}&api_key=${SERP_API_KEY}`
+    const json = await fetchJsonSafe<{ news_results?: NewsResult[] }>(url, {}, { news_results: [] })
+    return mapNewsResults((json.news_results ?? []).slice(0, 10))
   },
 }

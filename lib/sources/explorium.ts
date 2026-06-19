@@ -1,5 +1,6 @@
 import type { SignalType } from '@/lib/scoring'
 import { inferSignalType } from '@/lib/signals'
+import { fetchJsonSafe } from '@/lib/http'
 import type { LeadSource, RawSignal, SourceCompany } from './types'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -69,25 +70,15 @@ export const exploriumSource: LeadSource = {
   enabled: EXPLORIUM_ENABLED,
   async fetchSignals(company: SourceCompany): Promise<RawSignal[]> {
     if (!EXPLORIUM_ENABLED) return [] // flagged off → zero credits, zero network
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 10_000)
-    try {
-      const res = await fetch(`${EXPLORIUM_API_BASE}/v1/businesses/events`, {
+    const json = await fetchJsonSafe<{ events?: ExploriumEvent[] }>(
+      `${EXPLORIUM_API_BASE}/v1/businesses/events`,
+      {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${EXPLORIUM_API_KEY}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${EXPLORIUM_API_KEY}` },
         body: JSON.stringify({ company: company.name, website: company.website ?? undefined }),
-        signal: controller.signal,
-      })
-      if (!res.ok) return []
-      const json = (await res.json()) as { events?: ExploriumEvent[] }
-      return mapExploriumEvents(json.events ?? [])
-    } catch {
-      return [] // a flaky/unconfigured source never breaks the pipeline
-    } finally {
-      clearTimeout(timeout)
-    }
+      },
+      { events: [] },
+    )
+    return mapExploriumEvents(json.events ?? [])
   },
 }
