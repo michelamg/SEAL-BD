@@ -1,50 +1,30 @@
 import { describe, it, expect } from 'vitest'
-import { parseEdgarHits } from './sec-edgar'
-import { corroborate } from './index'
+import { corroborate, signalKey } from './index'
 import type { RawSignal } from './types'
 
-describe('parseEdgarHits', () => {
-  const fixture = {
-    hits: {
-      hits: [
-        {
-          _id: '0000320193-24-000123:acme-8k.htm',
-          _source: { form: '8-K', file_date: '2026-05-29', display_names: ['Acme Therapeutics Inc. (ACME) (CIK 0001234567)'] },
-        },
-        {
-          _id: '0001234567-26-000001:s1.htm',
-          _source: { form: 'S-1', file_date: '2026-05-01', display_names: ['Acme Therapeutics Inc. (CIK 0001234567)'] },
-        },
-      ],
-    },
-  }
+// parseEdgarHits is covered in its sibling sec-edgar.test.ts. This file tests the
+// registry/index layer only: corroboration and the shared de-dup key.
 
-  it('maps each filing to a verified signal from SEC EDGAR', () => {
-    const out = parseEdgarHits(fixture)
-    expect(out).toHaveLength(2)
-    expect(out.every((s) => s.confidence === 'verified' && s.source === 'SEC EDGAR')).toBe(true)
+describe('signalKey', () => {
+  it('produces the same key for a RawSignal and its stored-row twin', () => {
+    // The refresh route keys gathered signals (`type`) and DB rows (`signal_type`)
+    // through this one helper — they must collide for de-dup to work.
+    const gathered = signalKey({ source: 'SEC EDGAR', type: 'funding', observed_at: '2026-05-01' })
+    const stored = signalKey({ source: 'SEC EDGAR', type: 'funding', observed_at: '2026-05-01' })
+    expect(gathered).toBe(stored)
   })
 
-  it('classifies S-1 as funding and 8-K as filing', () => {
-    const out = parseEdgarHits(fixture)
-    expect(out[0].type).toBe('filing') // 8-K
-    expect(out[1].type).toBe('funding') // S-1
+  it('treats null and missing observed_at identically', () => {
+    expect(signalKey({ source: 'News', type: 'expansion', observed_at: null })).toBe(
+      signalKey({ source: 'News', type: 'expansion' }),
+    )
   })
 
-  it('builds an archive URL from accession + CIK', () => {
-    const out = parseEdgarHits(fixture)
-    expect(out[0].source_url).toBe('https://www.sec.gov/Archives/edgar/data/1234567/000032019324000123/acme-8k.htm')
-  })
-
-  it('strips the CIK suffix from the company display name', () => {
-    const out = parseEdgarHits(fixture)
-    expect(out[0].summary).toContain('Acme Therapeutics Inc.')
-    expect(out[0].summary).not.toContain('CIK')
-  })
-
-  it('is robust to an empty / malformed response', () => {
-    expect(parseEdgarHits({})).toEqual([])
-    expect(parseEdgarHits({ hits: { hits: [] } })).toEqual([])
+  it('distinguishes different source, type, or date', () => {
+    const base = { source: 'News', type: 'funding' as const, observed_at: '2026-05-01' }
+    expect(signalKey(base)).not.toBe(signalKey({ ...base, source: 'SEC EDGAR' }))
+    expect(signalKey(base)).not.toBe(signalKey({ ...base, type: 'hiring' }))
+    expect(signalKey(base)).not.toBe(signalKey({ ...base, observed_at: '2026-05-02' }))
   })
 })
 

@@ -1,4 +1,5 @@
-import { gatherSignals } from '@/lib/sources'
+import { gatherSignals, signalKey } from '@/lib/sources'
+import type { SignalType } from '@/lib/scoring'
 import { recordAudit } from '@/lib/audit-log'
 import { requireUser } from '@/lib/api/auth'
 import { rateLimit } from '@/lib/api/rate-limit'
@@ -42,9 +43,13 @@ export async function POST(request: Request) {
     .from('lead_signals')
     .select('signal_type, source, observed_at')
     .eq('company_id', companyId)
-  const seen = new Set((existing ?? []).map((r: Record<string, unknown>) => `${r.source}|${r.signal_type}|${r.observed_at ?? ''}`))
+  const seen = new Set(
+    (existing ?? []).map((r: Record<string, unknown>) =>
+      signalKey({ source: r.source as string, type: r.signal_type as SignalType, observed_at: r.observed_at as string | null }),
+    ),
+  )
 
-  const fresh = gathered.filter((s) => !seen.has(`${s.source}|${s.type}|${s.observed_at ?? ''}`))
+  const fresh = gathered.filter((s) => !seen.has(signalKey(s)))
 
   if (fresh.length > 0) {
     await supabase.from('lead_signals').insert(

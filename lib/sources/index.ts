@@ -1,3 +1,4 @@
+import type { SignalType } from '@/lib/scoring'
 import type { LeadSource, RawSignal, SourceCompany } from './types'
 import { secEdgarSource } from './sec-edgar'
 import { exploriumSource } from './explorium'
@@ -20,6 +21,15 @@ export const SOURCES: LeadSource[] = [
   permitsSource,
   exploriumSource,
 ]
+
+// Stable identity for a signal occurrence: the same source reporting the same
+// signal type on the same observed date is the same event. Both sides of the
+// refresh de-dup — freshly gathered RawSignals and already-stored DB rows — must
+// key identically, so this single helper is the only place the format lives.
+// (The DB column is `signal_type`; map it to `type` before calling.)
+export function signalKey(s: { source: string; type: SignalType; observed_at?: string | null }): string {
+  return `${s.source}|${s.type}|${s.observed_at ?? ''}`
+}
 
 const DAY_MS = 86_400_000
 
