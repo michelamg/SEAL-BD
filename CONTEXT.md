@@ -55,6 +55,15 @@ PII). Neil builds as a scoped, revocable collaborator.
 - *Kickoff blocker:* nothing deploys until C&W provisions these accounts.
 - *Open:* is the current Supabase project Hannah's personal one or already C&W's? Migrate the
   (solid) existing schema into C&W production; decide whether to carry the seed data.
+- *Provisioning status (2026-06-19):* a Supabase project (`rvrnzoxqoxnojmhurukf`) is provisioned and
+  its URL + anon + service-role keys are wired into `.env.local`. Probed live: the **public schema is
+  empty** (0 app tables — `companies` 404s; only an `rls_auto_enable` RPC exists), so it's a *blank
+  slate*, not a populated personal project — no data migration, just **apply `supabase/schema.sql` +
+  `add-lease-fields.sql` + `rls.sql`**. Auth: email on, **self-signup currently OPEN**
+  (`disable_signup:false`) — gate it before any prod use (D1/RLS already fails closed via
+  `profiles.approved`, but disabling open sign-ups in Supabase Auth is the primary control). Applying
+  the schema is **blocked on DDL access** the service-role JWT can't do — needs the SQL editor, DB
+  connection string, or a Management API token (user action).
 
 ### D7 · Salesforce export
 **Configurable field-mapping layer**, your fields → their Salesforce fields, adjustable without
@@ -128,7 +137,9 @@ Building at-risk in local dev (pre-client-approval). All changes uncommitted. Ru
 Verification gates: `npm run typecheck` (clean), `npm test` (47 passing), `npm run build` (compiles all routes). CI in `.github/workflows/ci.yml`.
 
 **Done + verified (earlier sessions):**
-- App boots locally (Next 16 + Turbopack). `.env.local` has PLACEHOLDER Supabase + API keys.
+- App boots locally (Next 16 + Turbopack). `.env.local` now has the **real C&W Supabase** URL + anon +
+  service-role keys (project `rvrnzoxqoxnojmhurukf`, empty schema — see D6); API keys (OpenAI/Apollo/
+  ZoomInfo/SerpAPI) remain PLACEHOLDER pending C&W subscriptions.
 - Killed the data-fabrication bug in `app/api/leads/route.ts` (no invented companies; temp 0.3). Tested live.
 - Auth foundation (D1/D2 gate): `@supabase/ssr`, `lib/supabase/{client,server,proxy}.ts`, root `proxy.ts`, `app/login/{page,actions}.ts`. Unauthenticated routes 307 → `/login`. App is locked.
 
