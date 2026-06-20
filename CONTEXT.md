@@ -62,10 +62,11 @@ PII). Neil builds as a scoped, revocable collaborator.
   through the Management API query endpoint using a CLI personal access token. **Verified live:** 17
   public tables all RLS-enabled, 63 policies, `is_member`/`is_admin` helpers, `on_auth_user_created`
   trigger, 12 enums. No data migration needed (project was empty, not Hannah's populated one).
-  ⚠ *Still open:* **self-signup is OPEN** in Supabase Auth (`disable_signup:false`) — gate before prod
-  (RLS fails closed via `profiles.approved`, but disabling open sign-ups is the primary control); and
-  **no admin seeded yet** — first real user needs `approved=true, role='admin'` set manually once they
-  sign up.
+  *Signup gated (2026-06-20):* open self-signup is now **DISABLED** (`disable_signup=true`) — random
+  registration is rejected (`signup_disabled`/422). RLS verified per-persona (anon / unapproved /
+  approved broker / admin) via `supabase/tests/rls-persona-e2e.py` — all pass; signup ≠ data access
+  holds. ⚠ *Still open:* **no admin seeded yet** — see `supabase/RUNBOOK.md` to create + promote the
+  first admin (signup is disabled, so accounts are admin-created until self-signup is re-opened).
 
 ### D7 · Salesforce export
 **Configurable field-mapping layer**, your fields → their Salesforce fields, adjustable without
