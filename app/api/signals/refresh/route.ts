@@ -52,7 +52,10 @@ export async function POST(request: Request) {
   const fresh = gathered.filter((s) => !seen.has(signalKey(s)))
 
   if (fresh.length > 0) {
-    await supabase.from('lead_signals').insert(
+    // Upsert (not insert) so a concurrent refresh that races past the app-level
+    // de-dup resolves to a no-op against the lead_signals_dedup constraint
+    // (company_id, source, signal_type, observed_at) instead of a 23505 error.
+    await supabase.from('lead_signals').upsert(
       fresh.map((s) => ({
         company_id: companyId,
         signal_type: s.type,
@@ -63,6 +66,7 @@ export async function POST(request: Request) {
         confidence: s.confidence,
         corroboration_count: s.corroboration_count ?? 1,
       })),
+      { onConflict: 'company_id,source,signal_type,observed_at', ignoreDuplicates: true },
     )
     await supabase.from('company_events').insert({
       company_id: companyId,

@@ -55,15 +55,17 @@ PII). Neil builds as a scoped, revocable collaborator.
 - *Kickoff blocker:* nothing deploys until C&W provisions these accounts.
 - *Open:* is the current Supabase project Hannah's personal one or already C&W's? Migrate the
   (solid) existing schema into C&W production; decide whether to carry the seed data.
-- *Provisioning status (2026-06-19):* a Supabase project (`rvrnzoxqoxnojmhurukf`) is provisioned and
-  its URL + anon + service-role keys are wired into `.env.local`. Probed live: the **public schema is
-  empty** (0 app tables — `companies` 404s; only an `rls_auto_enable` RPC exists), so it's a *blank
-  slate*, not a populated personal project — no data migration, just **apply `supabase/schema.sql` +
-  `add-lease-fields.sql` + `rls.sql`**. Auth: email on, **self-signup currently OPEN**
-  (`disable_signup:false`) — gate it before any prod use (D1/RLS already fails closed via
-  `profiles.approved`, but disabling open sign-ups in Supabase Auth is the primary control). Applying
-  the schema is **blocked on DDL access** the service-role JWT can't do — needs the SQL editor, DB
-  connection string, or a Management API token (user action).
+- *Provisioning status (2026-06-19):* Supabase project `rvrnzoxqoxnojmhurukf` (name "lead_finder",
+  PG17, us-east-1, ACTIVE_HEALTHY). URL + anon + service-role keys wired into `.env.local`. **Schema
+  applied** — was a blank slate (0 tables), now fully provisioned via the consolidated migration
+  `supabase/migrations/*_init_seal_bd.sql` (schema.sql + add-lease-fields.sql + rls.sql), pushed
+  through the Management API query endpoint using a CLI personal access token. **Verified live:** 17
+  public tables all RLS-enabled, 63 policies, `is_member`/`is_admin` helpers, `on_auth_user_created`
+  trigger, 12 enums. No data migration needed (project was empty, not Hannah's populated one).
+  ⚠ *Still open:* **self-signup is OPEN** in Supabase Auth (`disable_signup:false`) — gate before prod
+  (RLS fails closed via `profiles.approved`, but disabling open sign-ups is the primary control); and
+  **no admin seeded yet** — first real user needs `approved=true, role='admin'` set manually once they
+  sign up.
 
 ### D7 · Salesforce export
 **Configurable field-mapping layer**, your fields → their Salesforce fields, adjustable without
