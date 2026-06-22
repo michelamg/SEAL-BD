@@ -11,6 +11,16 @@ function parseNumericCell(v: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined
 }
 
+// Normalize a date cell to YYYY-MM-DD, or null if empty/unparseable. A Postgres DATE
+// column rejects '' — emitting null (not '') keeps one undated row from failing the
+// whole insert batch.
+function parseDateCell(v: unknown): string | null {
+  const s = String(v ?? '').trim()
+  if (!s) return null
+  const d = new Date(s)
+  return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0]
+}
+
 // Neutralize CSV/formula injection: prefix cells beginning with =,+,-,@ (optionally
 // after leading whitespace) with a single quote so spreadsheets treat them as text.
 function neutralizeFormulaInjection<T>(row: T): T {
@@ -107,7 +117,7 @@ export function parseCompsCSV(csvContent: string) {
     rate_per_sf: parseNumericCell(row['Rate'] || row['$/SF/YR'] || row['Asking Rate'] || ''),
     lease_term: row['Term'] || row['Lease Term'] || '',
     lease_type: row['Type'] || row['Lease Type'] || '',
-    deal_date: row['Date'] || row['Deal Date'] || row['Execution Date'] || '',
+    deal_date: parseDateCell(row['Date'] || row['Deal Date'] || row['Execution Date']),
     vertical: undefined,
     source: 'upload',
   }))

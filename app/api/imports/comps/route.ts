@@ -36,7 +36,11 @@ export async function POST(request: Request) {
     }
 
     if (comps.length > 0) {
-      await db.from('lease_comps').insert(comps)
+      const { error } = await db.from('lease_comps').insert(comps)
+      if (error) {
+        captureError(error, { route: 'imports/comps', stage: 'insert' })
+        return Errors.internal()
+      }
     }
 
     return Response.json({ count: comps.length })

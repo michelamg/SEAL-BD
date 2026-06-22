@@ -4,16 +4,25 @@ import { Errors } from './responses'
 
 export type AuthResult = { user: User; supabase: SupabaseClient } | { error: Response }
 
-// Single authorization choke point for route handlers. Returns the authenticated
-// user + a request-scoped (RLS-enforcing) client, or a 401 Response to return.
+// Single authorization choke point for route handlers. Returns the authenticated,
+// approved user + a request-scoped (RLS-enforcing) client, or an error Response.
 //
 //   const auth = await requireUser()
 //   if ('error' in auth) return auth.error
 //   const { user, supabase } = auth
+//
+// Approval gate (D2): an authenticated but UNAPPROVED account (e.g. self-registered,
+// pending admin approval) must not read/write data or reach paid external APIs. RLS
+// enforces this for user-scoped DB access, but service-role routes (imports) and
+// external-API routes (leads/enrich/ideas/…) bypass RLS — so the gate lives here, at
+// the one choke point every route already calls. `profiles.approved` defaults false;
+// an admin flips it (see supabase/RUNBOOK.md).
 export async function requireUser(): Promise<AuthResult> {
   const supabase = await createClient()
   const { data } = await supabase.auth.getUser()
   if (!data.user) return { error: Errors.unauthenticated() }
+  const { data: profile } = await supabase.from('profiles').select('approved').eq('id', data.user.id).maybeSingle()
+  if (!profile?.approved) return { error: Errors.forbidden() }
   return { user: data.user, supabase }
 }
 

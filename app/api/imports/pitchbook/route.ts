@@ -36,21 +36,33 @@ export async function POST(request: Request) {
     }
 
     // Create report record
-    const { data: report } = await db.from('pitchbook_reports').insert({
+    const { data: report, error: reportErr } = await db.from('pitchbook_reports').insert({
       filename: file.name,
       record_count: companies.length,
     }).select().single()
 
-    if (!report) return Response.json({ error: 'Failed to create report' }, { status: 500 })
-
-    // Insert companies
-    if (companies.length > 0) {
-      await db.from('pitchbook_companies').insert(
-        companies.map((c) => ({ ...c, report_id: report.id }))
-      )
+    if (reportErr || !report) {
+      captureError(reportErr ?? new Error('no report row'), { route: 'imports/pitchbook', stage: 'report' })
+      return Errors.internal()
     }
 
-    await db.from('pitchbook_reports').update({ processed: true }).eq('id', report.id)
+    // Insert companies — if this fails, do NOT mark the report processed or report
+    // success (a half-imported report marked done is silent data loss).
+    if (companies.length > 0) {
+      const { error: insErr } = await db.from('pitchbook_companies').insert(
+        companies.map((c) => ({ ...c, report_id: report.id }))
+      )
+      if (insErr) {
+        captureError(insErr, { route: 'imports/pitchbook', stage: 'companies' })
+        return Errors.internal()
+      }
+    }
+
+    const { error: updErr } = await db.from('pitchbook_reports').update({ processed: true }).eq('id', report.id)
+    if (updErr) {
+      captureError(updErr, { route: 'imports/pitchbook', stage: 'mark-processed' })
+      return Errors.internal()
+    }
 
     return Response.json({ reportId: report.id, count: companies.length })
   } catch (err) {
