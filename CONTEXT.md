@@ -65,8 +65,9 @@ PII). Neil builds as a scoped, revocable collaborator.
   *Signup gated (2026-06-20):* open self-signup is now **DISABLED** (`disable_signup=true`) — random
   registration is rejected (`signup_disabled`/422). RLS verified per-persona (anon / unapproved /
   approved broker / admin) via `supabase/tests/rls-persona-e2e.py` — all pass; signup ≠ data access
-  holds. ⚠ *Still open:* **no admin seeded yet** — see `supabase/RUNBOOK.md` to create + promote the
-  first admin (signup is disabled, so accounts are admin-created until self-signup is re-opened).
+  holds. *First admin seeded (2026-06-24):* `neilbajaj72@gmail.com` (role=admin, approved; sign-in
+  verified) — created via admin API with a temp password to change on first login. Onboard more users
+  per `supabase/RUNBOOK.md` (admin-created while signup is disabled).
 
 ### D7 · Salesforce export
 **Configurable field-mapping layer**, your fields → their Salesforce fields, adjustable without
