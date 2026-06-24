@@ -2,6 +2,12 @@ import { fetchWithTimeout } from '@/lib/http'
 
 const SERP_API_KEY = process.env.SERP_API_KEY
 
+// SerpAPI is a paid integration (C&W-funded). googleSearch already returns []
+// when unset; this lets routes report the degraded state explicitly.
+export function isSerpConfigured(): boolean {
+  return !!SERP_API_KEY
+}
+
 interface SerpResult {
   title: string
   link: string

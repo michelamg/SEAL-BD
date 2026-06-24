@@ -21,6 +21,14 @@ export async function GET(request: Request) {
   const stageParam = url.searchParams.get('stage') ?? 'active'
   const stages = stageParam.split(',').map((s) => s.trim()).filter(Boolean)
 
+  // Validate against the company_stage enum so a bad query value is a clean 400,
+  // not a Postgres enum error surfaced as a 500.
+  const VALID_STAGES = new Set(['prospect', 'qualifying', 'active', 'nurturing', 'won', 'lost', 'disqualified'])
+  const invalidStages = stages.filter((s) => !VALID_STAGES.has(s))
+  if (stages.length === 0 || invalidStages.length > 0) {
+    return Errors.badRequest(`Invalid stage(s): ${invalidStages.join(', ') || '(none provided)'}`)
+  }
+
   const { data, error } = await supabase
     .from('companies')
     .select('*, contacts(first_name, last_name, title, email, phone, is_c_suite)')

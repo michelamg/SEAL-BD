@@ -4,11 +4,21 @@ import type { PitchbookCompany } from '@/types'
 // Bound how many lines csv-parse will read, to cap memory on large/malicious uploads.
 const MAX_LINES = 50000
 
-// Parse a numeric-ish cell, stripping thousands separators / currency symbols / units
-// (e.g. '12,500' -> 12500, '$1.2M' -> 1.2). Returns undefined if not finite.
+// Parse a numeric-ish cell: strip currency symbols / thousands separators and
+// APPLY a trailing magnitude suffix so '$1.2M' -> 1_200_000 (not 1.2 — dropping
+// the M silently turned 1.2M SF into 1.2 SF). '12,500' -> 12500, '$45.50' ->
+// 45.5, '2.3B' -> 2_300_000_000. Returns undefined if no number is present.
 function parseNumericCell(v: unknown): number | undefined {
-  const n = parseFloat(String(v).replace(/[^0-9.]/g, ''))
-  return Number.isFinite(n) ? n : undefined
+  const s = String(v ?? '').trim()
+  const m = s.match(/-?[\d,]*\.?\d+/)
+  if (!m) return undefined
+  let n = parseFloat(m[0].replace(/,/g, ''))
+  if (!Number.isFinite(n)) return undefined
+  const suffix = s.slice(s.indexOf(m[0]) + m[0].length).trim().toLowerCase()[0]
+  if (suffix === 'k') n *= 1_000
+  else if (suffix === 'm') n *= 1_000_000
+  else if (suffix === 'b') n *= 1_000_000_000
+  return n
 }
 
 // Normalize a date cell to YYYY-MM-DD, or null if empty/unparseable. A Postgres DATE

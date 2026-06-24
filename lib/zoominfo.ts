@@ -4,6 +4,12 @@ const ZOOMINFO_CLIENT_ID = process.env.ZOOMINFO_CLIENT_ID
 const ZOOMINFO_PRIVATE_KEY = process.env.ZOOMINFO_PRIVATE_KEY
 const ZOOMINFO_BASE = 'https://api.zoominfo.com'
 
+// ZoomInfo is a paid integration (C&W-funded). Routes check this to degrade
+// gracefully when credentials are absent rather than throwing → 500.
+export function isZoomInfoConfigured(): boolean {
+  return !!(ZOOMINFO_CLIENT_ID && ZOOMINFO_PRIVATE_KEY)
+}
+
 let ziToken: string | null = null
 let ziTokenExpiry = 0
 let ziTokenInFlight: Promise<string> | null = null

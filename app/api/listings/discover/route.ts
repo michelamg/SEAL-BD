@@ -1,6 +1,6 @@
 export const maxDuration = 60
 
-import { openai } from '@/lib/openai'
+import { openai, isOpenAIConfigured } from '@/lib/openai'
 import { z } from 'zod'
 import { requireUser } from '@/lib/api/auth'
 import { rateLimit } from '@/lib/api/rate-limit'
@@ -27,10 +27,12 @@ export async function POST(request: Request) {
   if ('error' in parsed) return parsed.error
   const { listingName, location, verticals, sizeSf } = parsed.data
 
+  if (!isOpenAIConfigured()) return Errors.notConfigured('AI (OpenAI)')
+
   try {
     const prompt = `You are a commercial real estate analyst for Cushman & Wakefield.
 
-Find 8 companies that are realistic prospects for this commercial property:
+Suggest 8 companies that are plausible prospects for this commercial property:
 - Property: ${listingName}
 - Location: ${location}
 - Size: ${sizeSf ? `${sizeSf.toLocaleString()} SF` : 'varies'}
@@ -56,10 +58,21 @@ Return JSON array: [{
       messages: [{ role: 'user', content: prompt }],
       response_format: { type: 'json_object' },
       temperature: 0.8,
-    })
+    }, { timeout: 30000 })
 
     const data = JSON.parse(response.choices[0].message.content || '{"prospects":[]}')
-    return Response.json({ prospects: data.prospects || data })
+    const raw = Array.isArray(data)
+      ? data
+      : data.prospects || data.companies || data.results || Object.values(data).find(Array.isArray) || []
+    // These are AI SUGGESTIONS, not verified prospects from a data source. Label
+    // every row so the UI flags them "unverified — confirm before outreach" and
+    // they never silently persist as real, sourced contacts (D3/D4 trust rule).
+    const prospects = (Array.isArray(raw) ? raw : []).map((p: Record<string, unknown>) => ({
+      ...p,
+      source: 'ai',
+      unverified: true,
+    }))
+    return Response.json({ prospects, ai_generated: true, unverified: true })
   } catch (err) {
     captureError(err, { route: 'listings/discover' })
     return Errors.internal()

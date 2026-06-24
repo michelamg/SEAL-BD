@@ -1,4 +1,4 @@
-import { openai } from '@/lib/openai'
+import { openai, isOpenAIConfigured } from '@/lib/openai'
 import { searchOrganizations } from '@/lib/apollo'
 import { searchCompanies as ziSearchCompanies } from '@/lib/zoominfo'
 import { googleSearch, extractCompaniesFromSearch } from '@/lib/serp'
@@ -16,7 +16,7 @@ const LeadsSchema = z.object({
   location: z.string().optional(),
   companySize: z.string().optional(),
   triggerSignals: z.array(z.string()).optional(),
-  count: z.number().optional(),
+  count: z.number().optional().default(10),
   vertical: z.string().optional(),
 })
 
@@ -118,6 +118,26 @@ export async function POST(request: Request) {
       })
     }
 
+    // No OpenAI key (free tier): return the real discovered companies unscored
+    // rather than 500 on a keyless model call. Never fabricate.
+    if (!isOpenAIConfigured()) {
+      return Response.json({
+        leads: unique.slice(0, count).map((c) => ({
+          company_name: c.name,
+          website: c.website,
+          location: c.location,
+          trigger_detail: c.description,
+          source: c.source,
+        })),
+        sources_used: ['Google Search', 'Apollo.io', 'ZoomInfo'].filter((s) =>
+          foundCompanies.some((c) => c.source === s)),
+        raw_found: unique.length,
+        ai_scored: false,
+        message: 'Companies discovered from live sources, but AI scoring is unavailable (OPENAI_API_KEY not set). Showing raw results.',
+        errors: errors.length > 0 ? errors : undefined,
+      })
+    }
+
     const prompt = `You are a CRE analyst for Cushman & Wakefield. Score and enrich these REAL companies for commercial real estate outreach. Use ONLY the companies in the list below. Do NOT invent companies and do NOT fabricate facts; assess based only on what is provided.
 
 Companies found for ${industry} in ${location}:
@@ -125,7 +145,7 @@ ${unique.slice(0, 20).map((c, i) => `${i + 1}. ${c.name}${c.description ? ` (${c
 
 Target: ${vertical || 'any'} vertical, company size: ${companySize}, trigger signals: ${triggerSignals?.join(', ')}
 
-For each company, assess their CRE needs and return the top ${Math.min(count as number, unique.length)} most relevant ones.
+For each company, assess their CRE needs and return the top ${Math.min(count, unique.length)} most relevant ones.
 Return JSON array: [{
   "company_name": "exact name from list",
   "website": "website if known",
@@ -146,7 +166,7 @@ Return JSON array: [{
       messages: [{ role: 'user', content: prompt }],
       response_format: { type: 'json_object' },
       temperature: 0.3,
-    })
+    }, { timeout: 30000 })
 
     const raw = response.choices[0].message.content || '{"leads":[]}'
     const aiData = JSON.parse(raw)

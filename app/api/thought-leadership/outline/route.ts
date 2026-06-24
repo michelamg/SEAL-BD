@@ -1,6 +1,6 @@
 export const maxDuration = 60
 
-import { generateWhitePaperOutline } from '@/lib/openai'
+import { generateWhitePaperOutline, isOpenAIConfigured } from '@/lib/openai'
 import { z } from 'zod'
 import { requireUser } from '@/lib/api/auth'
 import { rateLimit } from '@/lib/api/rate-limit'
@@ -24,6 +24,8 @@ export async function POST(request: Request) {
 
   const parsed = await parseJson(request, Schema)
   if ('error' in parsed) return parsed.error
+
+  if (!isOpenAIConfigured()) return Errors.notConfigured('AI (OpenAI)')
 
   try {
     const result = await generateWhitePaperOutline(parsed.data)

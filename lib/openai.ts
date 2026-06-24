@@ -20,6 +20,12 @@ export const openai = new Proxy({} as OpenAI, {
   },
 })
 
+// True when an OpenAI key is set. Routes that need AI check this and degrade
+// gracefully (Errors.notConfigured) instead of letting a keyless call 500.
+export function isOpenAIConfigured(): boolean {
+  return !!process.env.OPENAI_API_KEY
+}
+
 export const VERTICALS = ['NIC', 'Tech', 'Life Sci', 'Defense', 'Pro Services'] as const
 
 export const OUTREACH_TEMPLATES = {

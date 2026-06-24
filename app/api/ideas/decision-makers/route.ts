@@ -1,5 +1,5 @@
-import { openai } from '@/lib/openai'
-import { searchPeople, formatApolloContact } from '@/lib/apollo'
+import { openai, isOpenAIConfigured } from '@/lib/openai'
+import { searchPeople, formatApolloContact, isApolloConfigured } from '@/lib/apollo'
 import { z } from 'zod'
 import { requireUser } from '@/lib/api/auth'
 import { rateLimit } from '@/lib/api/rate-limit'
@@ -51,37 +51,38 @@ export async function POST(request: Request) {
       // Apollo not configured — fall back to AI
     }
 
-    // If Apollo returned nothing, use AI to identify likely decision makers
-    if (contacts.length === 0) {
-      const prompt = `For ${companyName} (${industry || 'company'} in ${location || 'San Diego, CA'}), identify the 5 most likely real estate decision makers by title.
+    // If Apollo returned nothing and AI is available, suggest decision-maker
+    // ROLES to target — never invent named people. Fabricating real-person PII
+    // (names) for a real prospect violates the no-fabrication rule the rest of
+    // the product enforces; titles + rationale are useful and honest.
+    if (contacts.length === 0 && isOpenAIConfigured()) {
+      const prompt = `For ${companyName || 'a company'} (${industry || 'company'} in ${location || 'San Diego, CA'}), list the 5 job titles/roles most likely to influence or approve commercial real estate decisions (office, lab, industrial space).
 
-These are the people who influence or approve commercial real estate decisions (office, lab, industrial space).
+Do NOT invent specific people or names — return ROLES only.
 
 Return JSON array: [{
-  "first_name": "...",
-  "last_name": "...",
-  "title": "specific title",
+  "title": "specific role/title",
   "is_c_suite": true/false,
-  "note": "why this person is relevant to RE decisions"
+  "note": "why this role drives RE decisions at this type of company"
 }]
 
-Use realistic titles specific to this type of company. Focus on: CFO, VP Real Estate, Head of Facilities, COO, Chief of Staff, Director of Corporate Services.`
+Focus on: CFO, VP Real Estate, Head of Facilities, COO, Chief of Staff, Director of Corporate Services.`
 
       const response = await openai.chat.completions.create({
         model: 'gpt-4o',
         messages: [{ role: 'user', content: prompt }],
         response_format: { type: 'json_object' },
         temperature: 0.5,
-      })
+      }, { timeout: 30000 })
 
-      const data = JSON.parse(response.choices[0].message.content || '{"contacts":[]}')
-      const aiContacts = data.contacts || data
-      contacts = aiContacts.map((c: Record<string, unknown>) => ({
-        first_name: String(c.first_name || ''),
-        last_name: String(c.last_name || ''),
+      const data = JSON.parse(response.choices[0].message.content || '{"roles":[]}')
+      const aiRoles = Array.isArray(data) ? data : data.roles || data.contacts || []
+      contacts = (Array.isArray(aiRoles) ? aiRoles : []).map((c: Record<string, unknown>) => ({
+        first_name: '', // role suggestion — no fabricated person
+        last_name: '',
         title: String(c.title || ''),
         is_c_suite: Boolean(c.is_c_suite),
-        source: 'ai',
+        source: 'ai-suggested-role',
         notes: String(c.note || ''),
         email: '',
         phone: '',
@@ -90,7 +91,7 @@ Use realistic titles specific to this type of company. Focus on: CFO, VP Real Es
       }))
     }
 
-    return Response.json({ contacts })
+    return Response.json({ contacts, source: contacts[0]?.source === 'ai-suggested-role' ? 'ai-suggested-roles' : 'apollo' })
   } catch (err) {
     captureError(err, { route: 'ideas-decision-makers' })
     return Errors.internal()

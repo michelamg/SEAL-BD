@@ -3,6 +3,12 @@ import { fetchWithTimeout } from '@/lib/http'
 const APOLLO_API_KEY = process.env.APOLLO_API_KEY
 const APOLLO_BASE = 'https://api.apollo.io/v1'
 
+// Apollo is a paid integration (C&W-funded). Routes check this to degrade
+// gracefully when no key is set rather than throwing → 500.
+export function isApolloConfigured(): boolean {
+  return !!APOLLO_API_KEY
+}
+
 interface ApolloOrganization {
   id: string
   name: string

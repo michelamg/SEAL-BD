@@ -22,6 +22,14 @@ describe('parseCompsCSV', () => {
     expect(row.tenant_name).toBe('Acme')
     expect(row.size_sf).toBe(8000)
   })
+
+  it('applies magnitude suffixes and strips separators/currency', () => {
+    const [row] = parseCompsCSV('Tenant,SF,Rate\nAcme,1.2M,"$45.50"\n')
+    expect(row.size_sf).toBe(1_200_000) // not 1.2 — the M must multiply
+    expect(row.rate_per_sf).toBe(45.5)
+    const [row2] = parseCompsCSV('Tenant,SF\nBeta,"12,500"\n')
+    expect(row2.size_sf).toBe(12500)
+  })
 })
 
 describe('parsePitchbookCSV', () => {

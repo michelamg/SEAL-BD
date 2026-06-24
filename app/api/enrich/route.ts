@@ -1,7 +1,7 @@
 export const maxDuration = 60
 
-import { searchPeople, formatApolloContact } from '@/lib/apollo'
-import { searchContacts as ziSearchContacts } from '@/lib/zoominfo'
+import { searchPeople, formatApolloContact, isApolloConfigured } from '@/lib/apollo'
+import { searchContacts as ziSearchContacts, isZoomInfoConfigured } from '@/lib/zoominfo'
 import { z } from 'zod'
 import { requireUser } from '@/lib/api/auth'
 import { rateLimit } from '@/lib/api/rate-limit'
@@ -9,10 +9,14 @@ import { parseJson } from '@/lib/api/validate'
 import { Errors } from '@/lib/api/responses'
 import { captureError } from '@/lib/logger'
 
-const EnrichSchema = z.object({
-  companyName: z.string().optional(),
-  domain: z.string().optional(),
-})
+const EnrichSchema = z
+  .object({
+    companyName: z.string().optional(),
+    domain: z.string().optional(),
+  })
+  .refine((d) => Boolean(d.companyName || d.domain), {
+    message: 'companyName or domain is required',
+  })
 
 export async function POST(request: Request) {
   const auth = await requireUser()
@@ -25,6 +29,12 @@ export async function POST(request: Request) {
   const parsed = await parseJson(request, EnrichSchema)
   if ('error' in parsed) return parsed.error
   const { companyName, domain } = parsed.data
+
+  // Both enrichment providers are paid (C&W-funded). On the free tier neither is
+  // configured — say so cleanly instead of returning an empty list as if it ran.
+  if (!isApolloConfigured() && !isZoomInfoConfigured()) {
+    return Errors.notConfigured('Contact enrichment (Apollo / ZoomInfo)')
+  }
 
   try {
     const contacts: ReturnType<typeof formatApolloContact>[] = []
