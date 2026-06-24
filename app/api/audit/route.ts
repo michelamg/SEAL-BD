@@ -1,4 +1,4 @@
-import { openai } from '@/lib/openai'
+import { openai, isOpenAIConfigured } from '@/lib/openai'
 import { scoreLead, type CompanyInput, type SignalInput, type Scorecard } from '@/lib/scoring'
 import { inferSignalType } from '@/lib/signals'
 import { recordAudit } from '@/lib/audit-log'
@@ -109,12 +109,16 @@ export async function POST(request: Request) {
     return Errors.internal()
   }
 
+  // The audit row above is the source of truth; the company score + timeline are
+  // denormalized follow-ups. Check (don't silently swallow) their errors, but
+  // don't fail the request — the audit persisted, and a 500 here would prompt a
+  // retry that double-writes the audit. Surface a warning instead.
   const prevScore: number | null = company.current_score ?? null
-  await supabase
+  const { error: updErr } = await supabase
     .from('companies')
     .update({ current_score: card.score, last_scored_at: new Date().toISOString() })
     .eq('id', companyId)
-  await supabase.from('company_events').insert({
+  const { error: evErr } = await supabase.from('company_events').insert({
     company_id: companyId,
     event_type: 'scored',
     description: `Audited ${card.score}/100 (${card.band}). ${card.recommendedAction}`,
@@ -122,6 +126,8 @@ export async function POST(request: Request) {
     score_after: card.score,
     actor_email: user.email,
   })
+  if (updErr) captureError(updErr, { route: 'audit', stage: 'company-update' })
+  if (evErr) captureError(evErr, { route: 'audit', stage: 'event-insert' })
   await recordAudit(supabase, {
     actor_id: user.id,
     actor_email: user.email,
@@ -131,7 +137,13 @@ export async function POST(request: Request) {
     metadata: { score: card.score, band: card.band },
   })
 
-    return Response.json({ auditId: audit?.id, scorecard: card, narrative, signals })
+    return Response.json({
+      auditId: audit?.id,
+      scorecard: card,
+      narrative,
+      signals,
+      ...(updErr || evErr ? { warning: 'Audit saved; score/timeline update partially failed.' } : {}),
+    })
   } catch (err) {
     captureError(err, { route: 'audit' })
     return Errors.internal()
@@ -153,6 +165,12 @@ async function buildNarrative(
       `(${vertical ?? 'unclassified vertical'}) and best-effort lease timing only — confirm a live ` +
       `trigger before prioritizing outreach.`
     )
+  }
+
+  // No AI key (free tier): summarize the verified facts directly instead of
+  // making a keyless call that would throw. Never fabricate.
+  if (!isOpenAIConfigured()) {
+    return verified.map((s) => s.summary).filter(Boolean).join(' ') || 'Verified signals on file.'
   }
 
   const facts = verified
@@ -193,7 +211,7 @@ Recommendation (already decided, do not restate as a score): ${card.recommendedA
         { role: 'user', content: userContent },
       ],
       temperature: 0.3,
-    })
+    }, { timeout: 30000 })
     return (
       r.choices[0].message.content?.trim() ||
       verified.map((s) => s.summary).filter(Boolean).join(' ')
