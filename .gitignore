@@ -32,6 +32,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# but DO track the no-secret template (needed for handoff/onboarding)
+!.env.example
 
 # vercel
 .vercel

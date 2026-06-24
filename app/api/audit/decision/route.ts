@@ -77,15 +77,24 @@ export async function POST(request: Request) {
     }
   }
 
-  await supabase.from('companies').update({ stage: STAGE_FOR[decision] }).eq('id', companyId)
+  // Stage advance + timeline are denormalized follow-ups to the stamped decision
+  // above. Check their errors (don't swallow), but keep 200 — the audit stamp is
+  // the record of truth and a 500 here would prompt a retry that double-logs the
+  // event. Surface a warning instead.
+  const { error: stageErr } = await supabase
+    .from('companies')
+    .update({ stage: STAGE_FOR[decision] })
+    .eq('id', companyId)
 
-  await supabase.from('company_events').insert({
+  const { error: evErr } = await supabase.from('company_events').insert({
     company_id: companyId,
     event_type: 'status_change',
     description: `Triaged: ${decision}${reason ? ` — ${reason}` : ''}`,
     actor_email: user.email,
     metadata: { decision, auditId: auditId ?? null },
   })
+  if (stageErr) captureError(stageErr, { route: 'decision', stage: 'company-stage' })
+  if (evErr) captureError(evErr, { route: 'decision', stage: 'event-insert' })
 
   await recordAudit(supabase, {
     actor_id: user.id,
@@ -96,7 +105,12 @@ export async function POST(request: Request) {
     metadata: { decision, auditId: auditId ?? null },
   })
 
-    return Response.json({ ok: true, decision, auditId: auditId ?? null })
+    return Response.json({
+      ok: true,
+      decision,
+      auditId: auditId ?? null,
+      ...(stageErr || evErr ? { warning: 'Decision recorded; stage/timeline update partially failed.' } : {}),
+    })
   } catch (err) {
     captureError(err, { route: 'decision' })
     return Errors.internal()
