@@ -1,5 +1,6 @@
 import type { SignalType } from '@/lib/scoring'
 import { fetchJsonSafe } from '@/lib/http'
+import { nameMatches } from './match'
 import type { LeadSource, RawSignal, SourceCompany } from './types'
 
 // SEC EDGAR full-text search — free, authoritative, no API key. SEC requires a
@@ -30,16 +31,21 @@ interface EdgarResponse {
 }
 
 // Pure: turn an EDGAR full-text-search JSON response into normalized signals.
-// Network-free so it is unit-testable against a fixture.
-export function parseEdgarHits(json: EdgarResponse, limit = 5): RawSignal[] {
+// Network-free so it is unit-testable against a fixture. When `companyName` is
+// given, only filings whose filer name actually matches it are kept — EDGAR
+// full-text search over-matches on common name fragments, and an unmatched
+// filing stored confidence:'verified' would corrupt the score + AI narrative.
+export function parseEdgarHits(json: EdgarResponse, limit = 5, companyName?: string): RawSignal[] {
   const hits = json?.hits?.hits ?? []
   const signals: RawSignal[] = []
-  for (const hit of hits.slice(0, limit)) {
+  for (const hit of hits) {
+    if (signals.length >= limit) break
     const form = hit._source?.form
     const fileDate = hit._source?.file_date
     if (!form) continue
-    const { type, label } = classifyForm(form)
     const display = hit._source?.display_names?.[0] ?? ''
+    if (companyName && !nameMatches(display, companyName)) continue // attribution guard
+    const { type, label } = classifyForm(form)
     signals.push({
       type,
       summary: `${label}${display ? ` — ${display.replace(/\s*\(CIK.*\)\s*$/, '').trim()}` : ''}`,
@@ -79,6 +85,6 @@ export const secEdgarSource: LeadSource = {
       {},
       8000,
     )
-    return parseEdgarHits(json)
+    return parseEdgarHits(json, 5, company.name)
   },
 }

@@ -1,4 +1,5 @@
 import { fetchJsonSafe } from '@/lib/http'
+import { nameMatches } from './match'
 import type { LeadSource, RawSignal, SourceCompany } from './types'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,8 +57,14 @@ export function buildPermitQueryUrl(ds: PermitDataset, companyName: string, limi
 }
 
 // Map Socrata permit rows → verified expansion signals (a permit = active space work).
-export function mapPermitRows(rows: Record<string, unknown>[], ds: PermitDataset): RawSignal[] {
-  return rows.map((r) => {
+// When `companyName` is given, rows whose applicant/owner name doesn't actually
+// match are dropped — the SoQL `like '%name%'` over-matches (e.g. 'IBM' ⊂ 'ZIBMAT'),
+// and a mis-attributed permit stored confidence:'verified' would corrupt the score.
+export function mapPermitRows(rows: Record<string, unknown>[], ds: PermitDataset, companyName?: string): RawSignal[] {
+  const matched = companyName
+    ? rows.filter((r) => nameMatches(String(r[ds.nameField] ?? ''), companyName))
+    : rows
+  return matched.map((r) => {
     const desc = ds.descField ? String(r[ds.descField] ?? '') : ''
     const addr = ds.addressField ? String(r[ds.addressField] ?? '') : ''
     const date = ds.dateField ? String(r[ds.dateField] ?? '') : ''
@@ -85,7 +92,7 @@ export const permitsSource: LeadSource = {
           { headers: APP_TOKEN ? { 'X-App-Token': APP_TOKEN } : {} },
           [],
         )
-        return mapPermitRows(Array.isArray(rows) ? rows : [], ds)
+        return mapPermitRows(Array.isArray(rows) ? rows : [], ds, company.name)
       }),
     )
     return perDataset.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))

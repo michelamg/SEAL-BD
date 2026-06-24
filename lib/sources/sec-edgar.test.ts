@@ -48,9 +48,18 @@ describe('parseEdgarHits', () => {
     expect(parseEdgarHits({ hits: { hits } })).toHaveLength(2) // formless one dropped
   })
 
-  it('caps results at the limit (slice before classify)', () => {
+  it('caps results at the limit', () => {
     const hits = [hit('8-K'), hit('S-1'), hit('10-K'), hit('10-Q'), hit('8-K')]
     expect(parseEdgarHits({ hits: { hits } }, 3)).toHaveLength(3)
+  })
+
+  it('attribution guard: with companyName, keeps only matching filers', () => {
+    const hits = [hit('8-K'), hit('8-K', { name: 'Globex Inc (CIK 0000000999)' })]
+    const all = parseEdgarHits({ hits: { hits } }) // no name → no filter
+    expect(all).toHaveLength(2)
+    const matched = parseEdgarHits({ hits: { hits } }, 5, 'Acme')
+    expect(matched).toHaveLength(1) // Globex dropped — wrong entity
+    expect(matched[0].summary).toContain('ACME CORP')
   })
 
   it('returns [] for an empty/shapeless response', () => {
