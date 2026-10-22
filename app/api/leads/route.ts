@@ -1,7 +1,7 @@
 import { openai, isOpenAIConfigured } from '@/lib/openai'
-import { searchOrganizations } from '@/lib/apollo'
-import { searchCompanies as ziSearchCompanies } from '@/lib/zoominfo'
-import { googleSearch, extractCompaniesFromSearch } from '@/lib/serp'
+import { searchCompanies as apolloSearchCompanies, isApolloConfigured } from '@/lib/apollo'
+import { searchCompanies as ziSearchCompanies, isZoomInfoConfigured } from '@/lib/zoominfo'
+import { googleSearch, extractCompaniesFromSearch, isSerpConfigured } from '@/lib/serp'
 import { z } from 'zod'
 import { requireUser } from '@/lib/api/auth'
 import { rateLimit } from '@/lib/api/rate-limit'
@@ -36,63 +36,88 @@ export async function POST(request: Request) {
 
     const foundCompanies: { name: string; website?: string; location?: string; source: string; description?: string }[] = []
     const errors: string[] = []
+    // Why each failed source failed (provider messages, never keys), and which
+    // sources simply aren't connected yet. Returned to the client and logged.
+    const errorDetails: Record<string, string> = {}
+    const notConfigured: string[] = []
+    const fail = (source: string, e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e)
+      console.error(`[leads] ${source} failed: ${msg}`)
+      errors.push(source)
+      errorDetails[source] = msg.slice(0, 300)
+    }
+    const year = new Date().getFullYear()
 
     // ── 1. Google Search (SerpAPI) ────────────────────────────────────────
-    try {
-      const queries = [
-        `${industry} companies ${location} office space expansion 2024 2025`,
-        `${industry} ${location} company growing hiring`,
-        triggerSignals?.includes('recent_funding') ? `${industry} ${location} funding raised series` : null,
-        triggerSignals?.includes('gov_contract') ? `${industry} ${location} government contract awarded` : null,
-      ].filter(Boolean) as string[]
+    if (!isSerpConfigured()) {
+      notConfigured.push('Google Search')
+    } else {
+      try {
+        const queries = [
+          `${industry} companies ${location} office space expansion ${year - 1} ${year}`,
+          `${industry} ${location} company growing hiring`,
+          triggerSignals?.includes('recent_funding') ? `${industry} ${location} funding raised series` : null,
+          triggerSignals?.includes('gov_contract') ? `${industry} ${location} government contract awarded` : null,
+        ].filter(Boolean) as string[]
 
-      for (const q of queries.slice(0, 2)) {
-        const results = await googleSearch(q)
-        const names = extractCompaniesFromSearch(results)
-        names.forEach(name => foundCompanies.push({ name, source: 'Google Search' }))
+        for (const q of queries.slice(0, 2)) {
+          const results = await googleSearch(q)
+          const names = extractCompaniesFromSearch(results)
+          names.forEach(name => foundCompanies.push({ name, source: 'Google Search' }))
+        }
+      } catch (e) {
+        fail('Google Search', e)
       }
-    } catch (e) {
-      console.error(e)
-      errors.push('Google Search')
     }
 
     // ── 2. Apollo.io ──────────────────────────────────────────────────────
-    try {
-      const apolloResults = await searchOrganizations({ name: industry })
-      apolloResults.forEach(org => {
-        if (org.name) foundCompanies.push({
-          name: org.name,
-          website: org.website_url || undefined,
-          location: [org.city, org.state].filter(Boolean).join(', '),
-          description: org.short_description || undefined,
-          source: 'Apollo.io',
+    // Search by industry keyword + HQ location + headcount (not by company name).
+    if (!isApolloConfigured()) {
+      notConfigured.push('Apollo')
+    } else {
+      try {
+        const apolloResults = await apolloSearchCompanies({
+          keywords: [industry],
+          location,
+          companySize,
         })
-      })
-    } catch (e) {
-      console.error(e)
-      errors.push('Apollo')
+        apolloResults.forEach(org => {
+          if (org.name) foundCompanies.push({
+            name: org.name,
+            website: org.website_url || undefined,
+            location: [org.city, org.state].filter(Boolean).join(', '),
+            description: org.short_description || undefined,
+            source: 'Apollo.io',
+          })
+        })
+      } catch (e) {
+        fail('Apollo', e)
+      }
     }
 
     // ── 3. ZoomInfo ───────────────────────────────────────────────────────
-    try {
-      const [city, state] = (location || '').split(',').map((s: string) => s.trim())
-      const ziResults = await ziSearchCompanies({
-        industryKeywords: [industry],
-        city,
-        state,
-      })
-      ziResults.forEach((co: { name?: string; website?: string; city?: string; state?: string; description?: string }) => {
-        if (co.name) foundCompanies.push({
-          name: co.name,
-          website: co.website,
-          location: [co.city, co.state].filter(Boolean).join(', '),
-          description: co.description,
-          source: 'ZoomInfo',
+    if (!isZoomInfoConfigured()) {
+      notConfigured.push('ZoomInfo')
+    } else {
+      try {
+        const [city, state] = (location || '').split(',').map((s: string) => s.trim())
+        const ziResults = await ziSearchCompanies({
+          industryKeywords: [industry],
+          city,
+          state,
         })
-      })
-    } catch (e) {
-      console.error(e)
-      errors.push('ZoomInfo')
+        ziResults.forEach((co: { name?: string; website?: string; city?: string; state?: string; description?: string }) => {
+          if (co.name) foundCompanies.push({
+            name: co.name,
+            website: co.website,
+            location: [co.city, co.state].filter(Boolean).join(', '),
+            description: co.description,
+            source: 'ZoomInfo',
+          })
+        })
+      } catch (e) {
+        fail('ZoomInfo', e)
+      }
     }
 
     // ── 4. Deduplicate ────────────────────────────────────────────────────
@@ -115,6 +140,8 @@ export async function POST(request: Request) {
         raw_found: 0,
         message: 'No companies surfaced from the live sources for this search. Nothing was fabricated; try broadening the criteria or adding signals.',
         errors: errors.length > 0 ? errors : undefined,
+        error_details: errors.length > 0 ? errorDetails : undefined,
+        not_configured: notConfigured.length > 0 ? notConfigured : undefined,
       })
     }
 
@@ -135,6 +162,8 @@ export async function POST(request: Request) {
         ai_scored: false,
         message: 'Companies discovered from live sources, but AI scoring is unavailable (OPENAI_API_KEY not set). Showing raw results.',
         errors: errors.length > 0 ? errors : undefined,
+        error_details: errors.length > 0 ? errorDetails : undefined,
+        not_configured: notConfigured.length > 0 ? notConfigured : undefined,
       })
     }
 
@@ -188,6 +217,8 @@ Return JSON array: [{
       ].filter(Boolean),
       raw_found: unique.length,
       errors: errors.length > 0 ? errors : undefined,
+      error_details: errors.length > 0 ? errorDetails : undefined,
+      not_configured: notConfigured.length > 0 ? notConfigured : undefined,
     })
   } catch (err) {
     captureError(err, { route: 'leads' })
